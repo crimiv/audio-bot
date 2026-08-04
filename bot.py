@@ -191,37 +191,31 @@ async def upload(interaction: discord.Interaction, file: discord.Attachment):
         return
 
     try:
-        # Read the original file
         file_bytes = await file.read()
         if len(file_bytes) > 10 * 1024 * 1024:
             await interaction.followup.send("File too large. Maximum size is 10 MB.")
             return
 
-        # Load audio from bytes
         audio = AudioSegment.from_file(io.BytesIO(file_bytes), format=file.filename.split('.')[-1])
 
-        # Check duration and trim if over 7 minutes (420 seconds)
-        MAX_DURATION_SEC = 419  # 6:59
+        MAX_DURATION_SEC = 419
         if len(audio) > MAX_DURATION_SEC * 1000:
             audio = audio[:MAX_DURATION_SEC * 1000]
             await interaction.followup.send(f"Audio trimmed to {MAX_DURATION_SEC//60}:{MAX_DURATION_SEC%60:02d} (max 7 minutes).")
 
-        # Export to MP3 in memory
-        mp3_bytes = io.BytesIO()
-        audio.export(mp3_bytes, format="mp3", bitrate="192k")
-        mp3_bytes.seek(0)
+        ogg_bytes = io.BytesIO()
+        audio.export(ogg_bytes, format="ogg", parameters=["-q:a", "0"])
+        ogg_bytes.seek(0)
 
-        # Upload with forced name and description
         asset_id = await fetcher.upload_audio(
-            mp3_bytes.read(),
-            "audio.mp3",
+            ogg_bytes.read(),
+            "audio.ogg",
             name="Audio",
             description="Audio",
             group_id=11425892,
             cookie=UPLOAD_COOKIE
         )
 
-        # Auto-track the uploaded asset
         tracking_data = load_tracking()
         assets = tracking_data.get("assets", {})
         assets[str(asset_id)] = {"user_id": interaction.user.id, "moderated": False}

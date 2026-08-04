@@ -82,9 +82,6 @@ class RobloxAudioFetcher:
         try:
             async with session.get(url, headers=headers) as resp:
                 csrf = resp.headers.get('X-CSRF-TOKEN')
-                if not csrf:
-                    # Try to get from response body if needed, but usually it's in headers
-                    pass
                 return csrf
         except:
             return None
@@ -95,7 +92,6 @@ class RobloxAudioFetcher:
 
         session = await self._get_session()
 
-        # Get CSRF token
         csrf_token = await self._get_csrf_token(cookie)
         if not csrf_token:
             raise Exception("Could not retrieve CSRF token. The cookie may be invalid or expired.")
@@ -105,7 +101,6 @@ class RobloxAudioFetcher:
         if not description:
             description = ""
 
-        # Use the same endpoint with CSRF token
         url = "https://assetdelivery.roblox.com/v1/assetId/upload?assetId=0"
 
         data = aiohttp.FormData()
@@ -114,7 +109,9 @@ class RobloxAudioFetcher:
         data.add_field('description', description)
         if group_id:
             data.add_field('groupId', str(group_id))
-        data.add_field('file', file_bytes, filename=filename, content_type='audio/mpeg')
+
+        content_type = 'audio/ogg' if filename.endswith('.ogg') else 'audio/mpeg'
+        data.add_field('file', file_bytes, filename=filename, content_type=content_type)
 
         headers = {
             'Cookie': f'.ROBLOSECURITY={cookie}',
@@ -126,9 +123,6 @@ class RobloxAudioFetcher:
         try:
             async with session.post(url, data=data, headers=headers) as resp:
                 result = await resp.text()
-                print(f"Upload response status: {resp.status}")
-                print(f"Upload response body: {result[:500]}")
-
                 if resp.status == 200:
                     try:
                         result_json = json.loads(result)
