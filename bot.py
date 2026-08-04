@@ -16,7 +16,6 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 fetcher = RobloxAudioFetcher()
 
 def extract_asset_id(input_str: str) -> int:
-    """Extract Roblox asset ID from various input formats."""
     if input_str.isdigit():
         return int(input_str)
     match = re.search(r'rbxassetid://(\d+)', input_str)
@@ -42,8 +41,10 @@ async def on_ready():
 @bot.tree.command(name="audioinfo", description="Get detailed info about a Roblox audio asset")
 @app_commands.describe(asset="Roblox audio asset ID or URL")
 async def audioinfo(interaction: discord.Interaction, asset: str):
-    await interaction.response.defer()
+    # Log BEFORE defer – this ensures we see the command in logs
     print(f"🔄 /audioinfo called for asset: {asset}", flush=True)
+    await interaction.response.defer()
+    print(f"⏳ Deferred interaction", flush=True)
 
     try:
         asset_id = extract_asset_id(asset)
@@ -53,15 +54,18 @@ async def audioinfo(interaction: discord.Interaction, asset: str):
         return
 
     try:
-        audio_data = await fetcher.fetch_audio(asset_id)
-        if not audio_data or len(audio_data) < 1000:
-            # This check is now redundant but kept for safety
-            await interaction.followup.send("❌ Downloaded file is too small – not a valid audio asset.")
-            return
+        # Wrap the whole processing in a timeout to avoid indefinite hanging
+        async def process():
+            audio_data = await fetcher.fetch_audio(asset_id)
+            if not audio_data or len(audio_data) < 1000:
+                raise Exception("Downloaded file is too small – not a valid audio asset.")
+            print("📊 Analyzing audio...", flush=True)
+            info = await fetcher.analyze_audio(audio_data)
+            print("📊 Analysis complete.", flush=True)
+            return info, audio_data
 
-        print("📊 Analyzing audio...", flush=True)
-        info = await fetcher.analyze_audio(audio_data)
-        print("📊 Analysis complete.", flush=True)
+        # 25 second timeout for the entire operation
+        info, audio_data = await asyncio.wait_for(process(), timeout=25.0)
 
         print("🎨 Generating waveform image...", flush=True)
         waveform_img = generate_waveform_image(
@@ -93,9 +97,11 @@ async def audioinfo(interaction: discord.Interaction, asset: str):
         await interaction.followup.send(embed=embed, file=file)
         print("✅ Command completed successfully.", flush=True)
 
+    except asyncio.TimeoutError:
+        print("❌ Command timed out after 25 seconds", flush=True)
+        await interaction.followup.send("❌ Command timed out – Roblox may be slow or the file is too large.")
     except Exception as e:
         error_msg = str(e)
-        # Truncate to Discord's 2000-character limit (leaving room for "❌ Error: ")
         if len(error_msg) > 1900:
             error_msg = error_msg[:1900] + "… (truncated)"
         print(f"❌ Error in command: {error_msg}", flush=True)
