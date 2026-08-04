@@ -33,30 +33,35 @@ class RobloxAudioFetcher:
         try:
             async with session.get(url, headers=headers, timeout=timeout) as resp:
                 print(f"📡 Response status: {resp.status}", flush=True)
-                if resp.status != 200:
-                    raise Exception(f"HTTP {resp.status} – {await resp.text()}")
-
                 content_type = resp.headers.get('Content-Type', '')
                 print(f"📡 Content-Type: {content_type}", flush=True)
 
                 audio_data = await resp.read()
                 print(f"📡 Downloaded {len(audio_data)} bytes", flush=True)
 
-                # If the response is JSON, it's probably an error message
+                # If it's JSON, it's likely an error or a redirect URL
                 if 'application/json' in content_type:
                     try:
-                        error_json = json.loads(audio_data)
-                        raise Exception(f"Roblox API error: {error_json}")
-                    except:
-                        pass  # fall through to size check
+                        data = json.loads(audio_data)
+                        # Roblox error format: {"errors":[{"message":"..."}]}
+                        if 'errors' in data and data['errors']:
+                            error_msg = data['errors'][0].get('message', 'Unknown error')
+                            raise Exception(f"Roblox API error: {error_msg}")
+                        # Sometimes Roblox returns a URL for the asset (redirect)
+                        if 'url' in data:
+                            raise Exception(f"Asset requires a redirect – not directly downloadable via this endpoint. URL: {data['url']}")
+                        # Fallback: show full JSON
+                        raise Exception(f"Roblox returned unexpected JSON: {json.dumps(data)[:200]}")
+                    except json.JSONDecodeError:
+                        # Not JSON, maybe it's binary audio – proceed
+                        pass
 
-                # If it's too small to be audio, raise an error
+                # If it's too small, it's probably not audio
                 if len(audio_data) < 1000:
-                    # Try to see if it's plain text (like an HTML error)
                     try:
                         text = audio_data.decode('utf-8')
                         if '<html' in text.lower():
-                            raise Exception("Roblox returned an HTML error page (invalid asset?)")
+                            raise Exception("Roblox returned an HTML error page (invalid or private asset?)")
                         else:
                             raise Exception(f"Downloaded file is only {len(audio_data)} bytes – not a valid audio asset.")
                     except UnicodeDecodeError:
@@ -77,9 +82,7 @@ class RobloxAudioFetcher:
             tmp_path = tmp.name
 
         try:
-            # Attempt to load; if it fails, pydub will raise CouldntDecodeError
             audio = AudioSegment.from_file(tmp_path)
-            # ... rest of analysis (unchanged) ...
             duration = len(audio) / 1000.0
             sample_rate = audio.frame_rate
             sample_width = audio.sample_width
@@ -124,9 +127,9 @@ class RobloxAudioFetcher:
             }
 
         except CouldntDecodeError as e:
-            # Provide a more user-friendly error
+            # Provide a user-friendly error if ffmpeg fails
             raise Exception(f"Failed to decode audio. The downloaded file may not be a valid MP3. "
-                            f"Check that the asset ID is correct and that the asset is a playable audio. "
+                            f"Check that the asset ID is correct and that the asset is playable audio. "
                             f"(Raw error: {str(e)[:200]})")
         finally:
             if os.path.exists(tmp_path):
@@ -136,6 +139,7 @@ class RobloxAudioFetcher:
         if self.session:
             await self.session.close()
 
+    # Async context manager support
     async def __aenter__(self):
         return self
 
