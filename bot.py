@@ -99,7 +99,7 @@ async def audioinfo(interaction: discord.Interaction, asset: str):
             print(f"⚠️ Could not send error message: {followup_err}", flush=True)
 
 async def main():
-    async with fetcher:
+    async with fetcher:   # ✅ Now works
         await bot.start(DISCORD_TOKEN)
 
 if __name__ == "__main__":
