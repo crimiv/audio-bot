@@ -10,7 +10,7 @@ from audio_fetcher import RobloxAudioFetcher
 from waveform import generate_waveform_image, waveform_to_bytes
 
 if not DISCORD_TOKEN:
-    raise SystemExit("❌ DISCORD_TOKEN not set. Please add it to Railway environment variables.")
+    raise SystemExit("DISCORD_TOKEN not set.")
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -34,44 +34,20 @@ def extract_asset_id(input_str: str) -> int:
 
 @bot.event
 async def on_ready():
-    print(f"✅ Logged in as {bot.user}", flush=True)
     try:
         synced = await bot.tree.sync()
-        print(f"📋 Synced {len(synced)} command(s)", flush=True)
     except Exception as e:
-        print(f"❌ Failed to sync commands: {e}", flush=True)
+        pass
 
-# ========== DEBUG: Log every interaction ==========
-@bot.event
-async def on_interaction(interaction: discord.Interaction):
-    print(f"📩 Interaction received: {interaction.type} | Command: {interaction.data.get('name') if interaction.data else 'None'}", flush=True)
-    # The interaction will continue to the command handler automatically.
-
-# ========== TRADITIONAL PREFIX COMMAND (for testing) ==========
-@bot.command(name="ping")
-async def ping_text(ctx):
-    print("🏓 !ping (text) received!", flush=True)
-    await ctx.send("🏓 Pong! (text command)")
-
-# ========== SLASH COMMAND: /ping ==========
-@bot.tree.command(name="ping", description="Check if the bot is alive")
-async def ping(interaction: discord.Interaction):
-    print("🏓 /ping command received!", flush=True)
-    await interaction.response.send_message("🏓 Pong!")
-
-# ========== SLASH COMMAND: /audioinfo ==========
 @bot.tree.command(name="audioinfo", description="Get detailed info about a Roblox audio asset")
 @app_commands.describe(asset="Roblox audio asset ID or URL")
 async def audioinfo(interaction: discord.Interaction, asset: str):
-    print(f"🔄 /audioinfo called for asset: {asset}", flush=True)
     await interaction.response.defer()
-    print(f"⏳ Deferred interaction", flush=True)
 
     try:
         asset_id = extract_asset_id(asset)
-        print(f"🔍 Extracted asset ID: {asset_id}", flush=True)
     except ValueError as e:
-        await interaction.followup.send(f"❌ {str(e)}")
+        await interaction.followup.send(f"Error: {str(e)}")
         return
 
     try:
@@ -79,14 +55,13 @@ async def audioinfo(interaction: discord.Interaction, asset: str):
             audio_data = await fetcher.fetch_audio(asset_id)
             if not audio_data or len(audio_data) < 1000:
                 raise Exception("Downloaded file is too small – not a valid audio asset.")
-            print("📊 Analyzing audio...", flush=True)
             info = await fetcher.analyze_audio(audio_data)
-            print("📊 Analysis complete.", flush=True)
             return info
 
         info = await asyncio.wait_for(process(), timeout=25.0)
 
-        print("🎨 Generating waveform image...", flush=True)
+        duration_minutes = round(info["duration"] / 60, 1)
+
         waveform_img = generate_waveform_image(
             info["waveform"],
             width=600,
@@ -94,41 +69,36 @@ async def audioinfo(interaction: discord.Interaction, asset: str):
             color="#00FF88",
             bg_color="#1a1a2e"
         )
-        img_bytes = waveform_to_bytes(waveform_img)   # returns BytesIO
-        # FIX: pass BytesIO directly to discord.File (no extra wrapping)
+        img_bytes = waveform_to_bytes(waveform_img)
         file = discord.File(img_bytes, filename="waveform.png")
-        print("🎨 Waveform generated.", flush=True)
 
         embed = discord.Embed(
-            title="🎵 Roblox Audio Info",
+            title="Roblox Audio Info",
             description=f"Asset ID: `{asset_id}`",
             color=0x00FF88
         )
-        embed.add_field(name="⏱️ Duration", value=f"{info['duration']} seconds", inline=True)
-        embed.add_field(name="🎛️ Sample Rate", value=f"{info['sample_rate']} Hz", inline=True)
-        embed.add_field(name="📊 Bit Depth", value=f"{info['bit_depth']}-bit", inline=True)
-        embed.add_field(name="🔊 Channels", value=f"{info['channels']}", inline=True)
-        embed.add_field(name="📦 Bitrate", value=info['bitrate'], inline=True)
-        embed.add_field(name="📈 dBFS", value=f"{info['dbfs']} dB", inline=True)
-        embed.add_field(name="🔊 LUFS", value=f"{info['lufs']} LUFS", inline=True)
+        embed.add_field(name="Duration", value=f"{duration_minutes} minutes", inline=True)
+        embed.add_field(name="Sample Rate", value=f"{info['sample_rate']} Hz", inline=True)
+        embed.add_field(name="Bit Depth", value=f"{info['bit_depth']}-bit", inline=True)
+        embed.add_field(name="Channels", value=f"{info['channels']}", inline=True)
+        embed.add_field(name="Bitrate", value=info['bitrate'], inline=True)
+        embed.add_field(name="dBFS", value=f"{info['dbfs']} dB", inline=True)
+        embed.add_field(name="LUFS", value=f"{info['lufs']} LUFS", inline=True)
         embed.set_image(url="attachment://waveform.png")
-        embed.set_footer(text="Data fetched from Roblox • Waveform visualization")
+        embed.set_footer(text="Data fetched from Roblox")
 
         await interaction.followup.send(embed=embed, file=file)
-        print("✅ Command completed successfully.", flush=True)
 
     except asyncio.TimeoutError:
-        print("❌ Command timed out after 25 seconds", flush=True)
-        await interaction.followup.send("❌ Command timed out – Roblox may be slow or the file is too large.")
+        await interaction.followup.send("Command timed out – Roblox may be slow or the file is too large.")
     except Exception as e:
         error_msg = str(e)
         if len(error_msg) > 1900:
             error_msg = error_msg[:1900] + "… (truncated)"
-        print(f"❌ Error in command: {error_msg}", flush=True)
         try:
-            await interaction.followup.send(f"❌ Error: {error_msg}")
-        except Exception as followup_err:
-            print(f"⚠️ Could not send error message: {followup_err}", flush=True)
+            await interaction.followup.send(f"Error: {error_msg}")
+        except Exception:
+            pass
 
 async def main():
     async with fetcher:

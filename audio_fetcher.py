@@ -10,7 +10,7 @@ from pydub.exceptions import CouldntDecodeError
 from pydub.utils import mediainfo
 from config import ROBLOX_SECURITY
 
-MAX_AUDIO_SIZE = 8 * 1024 * 1024  # 8 MB
+MAX_AUDIO_SIZE = 8 * 1024 * 1024
 
 class RobloxAudioFetcher:
     def __init__(self):
@@ -29,21 +29,13 @@ class RobloxAudioFetcher:
         }
         if ROBLOX_SECURITY:
             headers['Cookie'] = f'.ROBLOSECURITY={ROBLOX_SECURITY}'
-            print(f"🔐 Authenticating request for asset {asset_id}", flush=True)
-        else:
-            print("⚠️ No .ROBLOSECURITY cookie set – using public access", flush=True)
 
         timeout = aiohttp.ClientTimeout(total=30)
-        print(f"📡 Fetching asset {asset_id}...", flush=True)
 
         try:
             async with session.get(url, headers=headers, timeout=timeout) as resp:
-                print(f"📡 Response status: {resp.status}", flush=True)
                 content_type = resp.headers.get('Content-Type', '')
-                print(f"📡 Content-Type: {content_type}", flush=True)
-
                 initial_data = await resp.read()
-                print(f"📡 Downloaded {len(initial_data)} bytes", flush=True)
 
                 if 'application/json' in content_type:
                     try:
@@ -53,11 +45,9 @@ class RobloxAudioFetcher:
                             raise Exception(f"Roblox API error: {error_msg}")
                         if 'location' in data:
                             location_url = data['location']
-                            print(f"📡 Following CDN redirect to: {location_url}", flush=True)
                             with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp:
                                 tmp_path = tmp.name
                                 async with session.get(location_url, headers=headers, timeout=timeout) as cdn_resp:
-                                    print(f"📡 CDN response status: {cdn_resp.status}", flush=True)
                                     if cdn_resp.status != 200:
                                         raise Exception(f"CDN returned HTTP {cdn_resp.status}")
                                     bytes_downloaded = 0
@@ -72,7 +62,6 @@ class RobloxAudioFetcher:
                             with open(tmp_path, 'rb') as f:
                                 audio_data = f.read()
                             os.unlink(tmp_path)
-                            print(f"📡 Final total: {len(audio_data)} bytes from CDN", flush=True)
                             return audio_data
                         else:
                             raise Exception(f"Unexpected JSON: {json.dumps(data)[:200]}")
@@ -92,10 +81,8 @@ class RobloxAudioFetcher:
                 return initial_data
 
         except asyncio.TimeoutError:
-            print(f"❌ Request timed out after 30 seconds", flush=True)
             raise Exception("Request to Roblox timed out.")
         except Exception as e:
-            print(f"❌ Request failed: {e}", flush=True)
             raise
 
     async def analyze_audio(self, audio_data: bytes):
@@ -148,7 +135,7 @@ class RobloxAudioFetcher:
             gc.collect()
 
             return {
-                "duration": round(duration, 2),
+                "duration": duration,
                 "sample_rate": sample_rate,
                 "bit_depth": bit_depth,
                 "channels": channels,
