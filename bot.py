@@ -16,6 +16,7 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 fetcher = RobloxAudioFetcher()
 
 def extract_asset_id(input_str: str) -> int:
+    """Extract Roblox asset ID from various input formats."""
     if input_str.isdigit():
         return int(input_str)
     match = re.search(r'rbxassetid://(\d+)', input_str)
@@ -53,8 +54,9 @@ async def audioinfo(interaction: discord.Interaction, asset: str):
 
     try:
         audio_data = await fetcher.fetch_audio(asset_id)
-        if not audio_data or len(audio_data) < 100:
-            await interaction.followup.send("❌ Failed to download audio (file too small or invalid)")
+        if not audio_data or len(audio_data) < 1000:
+            # This check is now redundant but kept for safety
+            await interaction.followup.send("❌ Downloaded file is too small – not a valid audio asset.")
             return
 
         print("📊 Analyzing audio...", flush=True)
@@ -92,14 +94,18 @@ async def audioinfo(interaction: discord.Interaction, asset: str):
         print("✅ Command completed successfully.", flush=True)
 
     except Exception as e:
-        print(f"❌ Error in command: {e}", flush=True)
+        error_msg = str(e)
+        # Truncate to Discord's 2000-character limit (leaving room for "❌ Error: ")
+        if len(error_msg) > 1900:
+            error_msg = error_msg[:1900] + "… (truncated)"
+        print(f"❌ Error in command: {error_msg}", flush=True)
         try:
-            await interaction.followup.send(f"❌ Error: {str(e)}")
+            await interaction.followup.send(f"❌ Error: {error_msg}")
         except Exception as followup_err:
             print(f"⚠️ Could not send error message: {followup_err}", flush=True)
 
 async def main():
-    async with fetcher:   # ✅ Now works
+    async with fetcher:
         await bot.start(DISCORD_TOKEN)
 
 if __name__ == "__main__":
