@@ -8,6 +8,7 @@ import tempfile
 import os
 from datetime import datetime
 from pydub import AudioSegment
+from pydub.exceptions import CouldntDecodeError
 
 from config import DISCORD_TOKEN
 from audio_fetcher import RobloxAudioFetcher
@@ -53,7 +54,15 @@ async def process_audio(asset_input: str):
         tmp_path = tmp.name
 
     try:
-        audio = AudioSegment.from_file(tmp_path)
+        # Try to decode with pydub – catch specific error
+        try:
+            audio = AudioSegment.from_file(tmp_path)
+        except CouldntDecodeError:
+            raise Exception("Invalid or unsupported audio file. The asset may not be a playable audio.")
+        except Exception as e:
+            # Other pydub errors (e.g., file not found)
+            raise Exception(f"Failed to process audio: {str(e)[:100]}")
+
         info = fetcher.analyze_segment(audio)
         info["file_size"] = len(audio_data)
 
