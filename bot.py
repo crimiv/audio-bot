@@ -94,8 +94,9 @@ async def audioinfo(interaction: discord.Interaction, asset: str):
             color="#00FF88",
             bg_color="#1a1a2e"
         )
-        img_bytes = waveform_to_bytes(waveform_img)
-        file = discord.File(io.BytesIO(img_bytes), filename="waveform.png")
+        img_bytes = waveform_to_bytes(waveform_img)   # returns BytesIO
+        # FIX: pass BytesIO directly to discord.File (no extra wrapping)
+        file = discord.File(img_bytes, filename="waveform.png")
         print("🎨 Waveform generated.", flush=True)
 
         embed = discord.Embed(
