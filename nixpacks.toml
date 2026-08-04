@@ -1,8 +1,8 @@
 [phases.setup]
-nixPkgs = ["ffmpeg", "python311", "python311Packages.pip"]
+nixPkgs = ["ffmpeg", "python311Full"]
 
 [phases.install]
-cmds = ["python -m pip install -r requirements.txt"]
+cmds = ["pip install -r requirements.txt"]   # now pip is available directly
 
 [start]
 cmd = "python bot.py"
