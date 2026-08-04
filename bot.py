@@ -4,6 +4,9 @@ from discord.ext import commands
 import asyncio
 import io
 import re
+import tempfile
+import os
+from pydub import AudioSegment
 
 from config import DISCORD_TOKEN
 from audio_fetcher import RobloxAudioFetcher
@@ -37,8 +40,27 @@ async def process_audio(asset_input: str):
     audio_data = await fetcher.fetch_audio(asset_id)
     if not audio_data or len(audio_data) < 1000:
         raise Exception("Downloaded file is too small")
-    info = await fetcher.analyze_audio(audio_data)
-    return asset_id, info
+
+    with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp:
+        tmp.write(audio_data)
+        tmp_path = tmp.name
+
+    try:
+        audio = AudioSegment.from_file(tmp_path)
+        info = fetcher.analyze_segment(audio)
+
+        ogg_path = None
+        if len(audio_data) < 20 * 1024 * 1024:
+            with tempfile.NamedTemporaryFile(suffix=".ogg", delete=False) as ogg_tmp:
+                ogg_path = ogg_tmp.name
+                audio.export(ogg_path, format="ogg")
+        else:
+            ogg_path = None
+
+        return asset_id, info, ogg_path, audio
+    finally:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
 
 @bot.event
 async def on_ready():
@@ -52,8 +74,11 @@ async def on_ready():
 async def audioinfo_slash(interaction: discord.Interaction, asset: str):
     await interaction.response.defer()
     try:
-        asset_id, info = await asyncio.wait_for(process_audio(asset), timeout=25.0)
-        await send_audio_info(interaction.followup, asset_id, info)
+        asset_id, info, ogg_path, audio = await asyncio.wait_for(process_audio(asset), timeout=25.0)
+        await send_audio_info(interaction.followup, asset_id, info, ogg_path)
+        if ogg_path and os.path.exists(ogg_path):
+            os.unlink(ogg_path)
+        del audio
     except asyncio.TimeoutError:
         await interaction.followup.send("Command timed out.")
     except Exception as e:
@@ -66,8 +91,11 @@ async def audioinfo_slash(interaction: discord.Interaction, asset: str):
 async def audioinfo_prefix(ctx: commands.Context, *, asset: str):
     async with ctx.typing():
         try:
-            asset_id, info = await asyncio.wait_for(process_audio(asset), timeout=25.0)
-            await send_audio_info(ctx, asset_id, info)
+            asset_id, info, ogg_path, audio = await asyncio.wait_for(process_audio(asset), timeout=25.0)
+            await send_audio_info(ctx, asset_id, info, ogg_path)
+            if ogg_path and os.path.exists(ogg_path):
+                os.unlink(ogg_path)
+            del audio
         except asyncio.TimeoutError:
             await ctx.send("Command timed out.")
         except Exception as e:
@@ -76,7 +104,7 @@ async def audioinfo_prefix(ctx: commands.Context, *, asset: str):
                 error_msg = error_msg[:1900] + "…"
             await ctx.send(f"Error: {error_msg}")
 
-async def send_audio_info(destination, asset_id: int, info: dict):
+async def send_audio_info(destination, asset_id: int, info: dict, ogg_path: str = None):
     duration_minutes = round(info["duration"] / 60, 1)
 
     waveform_img = generate_waveform_image(
@@ -87,7 +115,12 @@ async def send_audio_info(destination, asset_id: int, info: dict):
         bg_color="#1a1a2e"
     )
     img_bytes = waveform_to_bytes(waveform_img)
-    file = discord.File(img_bytes, filename="waveform.png")
+    waveform_file = discord.File(img_bytes, filename="waveform.png")
+
+    files = [waveform_file]
+    if ogg_path and os.path.exists(ogg_path) and os.path.getsize(ogg_path) < 25 * 1024 * 1024:
+        ogg_file = discord.File(ogg_path, filename="audio.ogg")
+        files.append(ogg_file)
 
     embed = discord.Embed(
         title="Roblox Audio Info",
@@ -104,7 +137,7 @@ async def send_audio_info(destination, asset_id: int, info: dict):
     embed.set_image(url="attachment://waveform.png")
     embed.set_footer(text="Data fetched from Roblox")
 
-    await destination.send(embed=embed, file=file)
+    await destination.send(embed=embed, files=files)
 
 async def main():
     async with fetcher:

@@ -85,26 +85,16 @@ class RobloxAudioFetcher:
         except Exception as e:
             raise
 
-    async def analyze_audio(self, audio_data: bytes):
-        if len(audio_data) > MAX_AUDIO_SIZE:
-            raise Exception(f"Audio file too large: {len(audio_data)//1024//1024} MB (max {MAX_AUDIO_SIZE//1024//1024} MB)")
+    def analyze_segment(self, audio: AudioSegment):
+        duration = len(audio) / 1000.0
+        sample_rate = audio.frame_rate
+        sample_width = audio.sample_width
+        bit_depth = sample_width * 8
+        channels = audio.channels
 
-        with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp:
-            tmp.write(audio_data)
-            tmp_path = tmp.name
-
-        del audio_data
-        gc.collect()
-
-        try:
-            audio = AudioSegment.from_file(tmp_path)
-            duration = len(audio) / 1000.0
-            sample_rate = audio.frame_rate
-            sample_width = audio.sample_width
-            bit_depth = sample_width * 8
-            channels = audio.channels
-
-            info = mediainfo(tmp_path)
+        with tempfile.NamedTemporaryFile(suffix=".mp3", delete=True) as tmp:
+            audio.export(tmp.name, format="mp3")
+            info = mediainfo(tmp.name)
             bitrate = info.get("bit_rate", "N/A")
             if bitrate != "N/A" and isinstance(bitrate, str):
                 try:
@@ -113,55 +103,60 @@ class RobloxAudioFetcher:
                 except ValueError:
                     pass
 
-            samples = audio.get_array_of_samples()
-            max_val = 2 ** (bit_depth - 1)
+        samples = audio.get_array_of_samples()
+        max_val = 2 ** (bit_depth - 1)
 
-            if len(samples) > 0:
-                sum_sq = sum(s * s for s in samples)
-                rms = math.sqrt(sum_sq / len(samples)) / max_val
-                dbfs = 20 * math.log10(rms) if rms > 0 else -float('inf')
-            else:
-                rms = 0
-                dbfs = -float('inf')
+        if len(samples) > 0:
+            sum_sq = sum(s * s for s in samples)
+            rms = math.sqrt(sum_sq / len(samples)) / max_val
+            dbfs = 20 * math.log10(rms) if rms > 0 else -float('inf')
+        else:
+            rms = 0
+            dbfs = -float('inf')
 
-            lufs = 20 * math.log10(rms) - 0.691 if rms > 0 else -float('inf')
+        lufs = 20 * math.log10(rms) - 0.691 if rms > 0 else -float('inf')
 
-            waveform = self._compute_waveform_rms(samples, max_val, num_points=400)
+        num_points = 400
+        block_size = max(1, len(samples) // num_points)
+        waveform = []
+        for i in range(0, len(samples), block_size):
+            block = samples[i:i+block_size]
+            if block:
+                rms_block = math.sqrt(sum(s*s for s in block) / len(block)) / max_val
+                waveform.append(rms_block)
 
-            del samples
+        return {
+            "duration": duration,
+            "sample_rate": sample_rate,
+            "bit_depth": bit_depth,
+            "channels": channels,
+            "bitrate": bitrate,
+            "dbfs": round(dbfs, 2) if dbfs != -float('inf') else "N/A",
+            "lufs": round(lufs, 2) if lufs != -float('inf') else "N/A",
+            "waveform": waveform,
+            "max_val": max_val
+        }
+
+    async def analyze_audio(self, audio_data: bytes):
+        if len(audio_data) > MAX_AUDIO_SIZE:
+            raise Exception(f"Audio file too large: {len(audio_data)//1024//1024} MB (max {MAX_AUDIO_SIZE//1024//1024} MB)")
+
+        with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp:
+            tmp.write(audio_data)
+            tmp_path = tmp.name
+
+        try:
+            audio = AudioSegment.from_file(tmp_path)
+            result = self.analyze_segment(audio)
             del audio
             gc.collect()
-
-            return {
-                "duration": duration,
-                "sample_rate": sample_rate,
-                "bit_depth": bit_depth,
-                "channels": channels,
-                "bitrate": bitrate,
-                "dbfs": round(dbfs, 2) if dbfs != -float('inf') else "N/A",
-                "lufs": round(lufs, 2) if lufs != -float('inf') else "N/A",
-                "waveform": waveform,
-                "max_val": max_val
-            }
-
+            return result
         except CouldntDecodeError as e:
             raise Exception(f"Failed to decode audio: {str(e)[:200]}")
         finally:
             if os.path.exists(tmp_path):
                 os.unlink(tmp_path)
             gc.collect()
-
-    def _compute_waveform_rms(self, samples, max_val, num_points=400):
-        if not samples:
-            return []
-        block_size = max(1, len(samples) // num_points)
-        waveform = []
-        for i in range(0, len(samples), block_size):
-            block = samples[i:i+block_size]
-            if block:
-                rms = math.sqrt(sum(s*s for s in block) / len(block)) / max_val
-                waveform.append(rms)
-        return waveform
 
     async def close(self):
         if self.session:
