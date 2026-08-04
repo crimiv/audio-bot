@@ -21,6 +21,33 @@ class RobloxAudioFetcher:
             self.session = aiohttp.ClientSession()
         return self.session
 
+    async def fetch_asset_details(self, asset_id: int):
+        session = await self._get_session()
+        url = f"https://apis.roblox.com/assets/v1/assets?ids={asset_id}"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        }
+        if ROBLOX_SECURITY:
+            headers['Cookie'] = f'.ROBLOSECURITY={ROBLOX_SECURITY}'
+
+        try:
+            async with session.get(url, headers=headers) as resp:
+                if resp.status != 200:
+                    return None
+                data = await resp.json()
+                if data.get("data") and len(data["data"]) > 0:
+                    asset = data["data"][0]
+                    return {
+                        "name": asset.get("name", "Unknown"),
+                        "creator_id": asset.get("creatorId"),
+                        "creator_type": asset.get("creatorType"),
+                        "favorite_count": asset.get("favoriteCount", 0),
+                        "created": asset.get("created", None)
+                    }
+                return None
+        except:
+            return None
+
     async def fetch_audio(self, asset_id: int):
         session = await self._get_session()
         url = f"https://assetdelivery.roblox.com/v1/assetId/{asset_id}"
@@ -134,7 +161,8 @@ class RobloxAudioFetcher:
             "dbfs": round(dbfs, 2) if dbfs != -float('inf') else "N/A",
             "lufs": round(lufs, 2) if lufs != -float('inf') else "N/A",
             "waveform": waveform,
-            "max_val": max_val
+            "max_val": max_val,
+            "file_size": len(audio.raw_data)  # approximate
         }
 
     async def analyze_audio(self, audio_data: bytes):
