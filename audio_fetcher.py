@@ -80,26 +80,24 @@ class RobloxAudioFetcher:
 
         if not name:
             name = os.path.splitext(filename)[0]
+        if not description:
+            description = ""
 
-        # Use the correct Roblox upload endpoint
-        url = "https://assetdelivery.roblox.com/v1/asset"
+        # Roblox upload endpoint – assetId=0 for new uploads
+        url = "https://assetdelivery.roblox.com/v1/assetId/upload?assetId=0"
 
-        # Build the multipart form data
         data = aiohttp.FormData()
-        data.add_field('assetType', 'Audio')
+        data.add_field('assetType', '3')          # 3 = Audio
         data.add_field('name', name)
-        if description:
-            data.add_field('description', description)
+        data.add_field('description', description)
         if group_id:
             data.add_field('groupId', str(group_id))
-        # The file field must be named 'file' and include the content type
         data.add_field('file', file_bytes, filename=filename, content_type='audio/mpeg')
 
         headers = {
             'Cookie': f'.ROBLOSECURITY={cookie}',
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             'Accept': 'application/json',
-            'Accept-Language': 'en-US,en;q=0.9',
         }
 
         try:
