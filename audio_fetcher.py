@@ -72,22 +72,44 @@ class RobloxAudioFetcher:
         except:
             return {"moderated": False, "status": "Error"}
 
+    async def _get_csrf_token(self, cookie: str):
+        session = await self._get_session()
+        url = "https://assetdelivery.roblox.com/v1/assetId/upload?assetId=0"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Cookie": f'.ROBLOSECURITY={cookie}'
+        }
+        try:
+            async with session.get(url, headers=headers) as resp:
+                csrf = resp.headers.get('X-CSRF-TOKEN')
+                if not csrf:
+                    # Try to get from response body if needed, but usually it's in headers
+                    pass
+                return csrf
+        except:
+            return None
+
     async def upload_audio(self, file_bytes: bytes, filename: str, name: str = None, description: str = None, group_id: int = None, cookie: str = None):
         if not cookie:
             raise Exception(".ROBLOSECURITY cookie is required for uploads.")
 
         session = await self._get_session()
 
+        # Get CSRF token
+        csrf_token = await self._get_csrf_token(cookie)
+        if not csrf_token:
+            raise Exception("Could not retrieve CSRF token. The cookie may be invalid or expired.")
+
         if not name:
             name = os.path.splitext(filename)[0]
         if not description:
             description = ""
 
-        # Roblox upload endpoint – assetId=0 for new uploads
+        # Use the same endpoint with CSRF token
         url = "https://assetdelivery.roblox.com/v1/assetId/upload?assetId=0"
 
         data = aiohttp.FormData()
-        data.add_field('assetType', '3')          # 3 = Audio
+        data.add_field('assetType', '3')
         data.add_field('name', name)
         data.add_field('description', description)
         if group_id:
@@ -98,6 +120,7 @@ class RobloxAudioFetcher:
             'Cookie': f'.ROBLOSECURITY={cookie}',
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             'Accept': 'application/json',
+            'X-CSRF-TOKEN': csrf_token
         }
 
         try:
