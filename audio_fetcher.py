@@ -23,7 +23,7 @@ class RobloxAudioFetcher:
 
     async def fetch_asset_details(self, asset_id: int):
         session = await self._get_session()
-        url = f"https://apis.roblox.com/assets/v1/assets?ids={asset_id}"
+        url = f"https://economy.roblox.com/v2/assets/{asset_id}/details"
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         }
@@ -35,14 +35,19 @@ class RobloxAudioFetcher:
                 if resp.status != 200:
                     return None
                 data = await resp.json()
-                if data.get("data") and len(data["data"]) > 0:
-                    asset = data["data"][0]
+                if data:
+                    creator = data.get("Creator", {})
+                    creator_name = creator.get("Name", "Unknown")
+                    if not creator_name or creator_name == "":
+                        creator_name = "Unknown"
                     return {
-                        "name": asset.get("name", "Unknown"),
-                        "creator_id": asset.get("creatorId"),
-                        "creator_type": asset.get("creatorType"),
-                        "favorite_count": asset.get("favoriteCount", 0),
-                        "created": asset.get("created", None)
+                        "name": creator_name,
+                        "creator_id": creator.get("Id"),
+                        "creator_type": creator.get("Type"),
+                        "favorite_count": data.get("FavoritedCount", 0),
+                        "created": data.get("Created", None),
+                        "description": data.get("Description", ""),
+                        "genre": data.get("Genre", "")
                     }
                 return None
         except:
