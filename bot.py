@@ -75,7 +75,7 @@ async def audioinfo_slash(interaction: discord.Interaction, asset: str):
     await interaction.response.defer()
     try:
         asset_id, info, ogg_path, audio = await asyncio.wait_for(process_audio(asset), timeout=25.0)
-        await send_audio_info(interaction.followup, asset_id, info, ogg_path)
+        await send_audio_info(interaction.followup, info, ogg_path)
         if ogg_path and os.path.exists(ogg_path):
             os.unlink(ogg_path)
         del audio
@@ -92,7 +92,7 @@ async def audioinfo_prefix(ctx: commands.Context, *, asset: str):
     async with ctx.typing():
         try:
             asset_id, info, ogg_path, audio = await asyncio.wait_for(process_audio(asset), timeout=25.0)
-            await send_audio_info(ctx, asset_id, info, ogg_path)
+            await send_audio_info(ctx, info, ogg_path)
             if ogg_path and os.path.exists(ogg_path):
                 os.unlink(ogg_path)
             del audio
@@ -104,7 +104,7 @@ async def audioinfo_prefix(ctx: commands.Context, *, asset: str):
                 error_msg = error_msg[:1900] + "…"
             await ctx.send(f"Error: {error_msg}")
 
-async def send_audio_info(destination, asset_id: int, info: dict, ogg_path: str = None):
+async def send_audio_info(destination, info: dict, ogg_path: str = None):
     duration_minutes = round(info["duration"] / 60, 1)
 
     waveform_img = generate_waveform_image(
@@ -122,11 +122,7 @@ async def send_audio_info(destination, asset_id: int, info: dict, ogg_path: str 
         ogg_file = discord.File(ogg_path, filename="audio.ogg")
         files.append(ogg_file)
 
-    embed = discord.Embed(
-        title="Roblox Audio Info",
-        description=f"Asset ID: `{asset_id}`",
-        color=0x00FF88
-    )
+    embed = discord.Embed(color=0x00FF88)
     embed.add_field(name="Duration", value=f"{duration_minutes} minutes", inline=True)
     embed.add_field(name="Sample Rate", value=f"{info['sample_rate']} Hz", inline=True)
     embed.add_field(name="Bit Depth", value=f"{info['bit_depth']}-bit", inline=True)
@@ -135,7 +131,6 @@ async def send_audio_info(destination, asset_id: int, info: dict, ogg_path: str 
     embed.add_field(name="dBFS", value=f"{info['dbfs']} dB", inline=True)
     embed.add_field(name="LUFS", value=f"{info['lufs']} LUFS", inline=True)
     embed.set_image(url="attachment://waveform.png")
-    embed.set_footer(text="Data fetched from Roblox")
 
     await destination.send(embed=embed, files=files)
 
