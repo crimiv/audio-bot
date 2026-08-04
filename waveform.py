@@ -2,7 +2,6 @@ from PIL import Image, ImageDraw
 import io
 
 def generate_waveform_image(waveform_data, width=600, height=150, color="#00FF88", bg_color="#1a1a2e"):
-    """Generate a waveform image from waveform data."""
     if not waveform_data or len(waveform_data) < 2:
         img = Image.new("RGB", (width, height), bg_color)
         draw = ImageDraw.Draw(img)

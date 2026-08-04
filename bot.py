@@ -41,7 +41,6 @@ async def on_ready():
 @bot.tree.command(name="audioinfo", description="Get detailed info about a Roblox audio asset")
 @app_commands.describe(asset="Roblox audio asset ID or URL")
 async def audioinfo(interaction: discord.Interaction, asset: str):
-    # Log BEFORE defer – this ensures we see the command in logs
     print(f"🔄 /audioinfo called for asset: {asset}", flush=True)
     await interaction.response.defer()
     print(f"⏳ Deferred interaction", flush=True)
@@ -54,7 +53,6 @@ async def audioinfo(interaction: discord.Interaction, asset: str):
         return
 
     try:
-        # Wrap the whole processing in a timeout to avoid indefinite hanging
         async def process():
             audio_data = await fetcher.fetch_audio(asset_id)
             if not audio_data or len(audio_data) < 1000:
@@ -64,7 +62,6 @@ async def audioinfo(interaction: discord.Interaction, asset: str):
             print("📊 Analysis complete.", flush=True)
             return info, audio_data
 
-        # 25 second timeout for the entire operation
         info, audio_data = await asyncio.wait_for(process(), timeout=25.0)
 
         print("🎨 Generating waveform image...", flush=True)
@@ -109,6 +106,11 @@ async def audioinfo(interaction: discord.Interaction, asset: str):
             await interaction.followup.send(f"❌ Error: {error_msg}")
         except Exception as followup_err:
             print(f"⚠️ Could not send error message: {followup_err}", flush=True)
+
+# Simple ping command to test if the bot is alive
+@bot.tree.command(name="ping", description="Check if the bot is alive")
+async def ping(interaction: discord.Interaction):
+    await interaction.response.send_message("🏓 Pong!")
 
 async def main():
     async with fetcher:
