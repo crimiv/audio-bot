@@ -79,18 +79,17 @@ class RobloxAudioFetcher:
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "Cookie": f'.ROBLOSECURITY={cookie}'
         }
-        print("[DEBUG] Getting CSRF token from www.roblox.com...", flush=True)
         try:
-            async with session.get(url, headers=headers) as resp:
+            async with session.get(url, headers=headers, allow_redirects=False) as resp:
+                # Check for redirect – means cookie is invalid
+                if resp.status in (301, 302, 303):
+                    raise Exception("Cookie is invalid or expired (redirected to login).")
                 token = resp.headers.get('X-CSRF-TOKEN')
-                print(f"[DEBUG] Response status: {resp.status}", flush=True)
-                print(f"[DEBUG] X-CSRF-TOKEN present: {bool(token)}", flush=True)
                 if token:
-                    print(f"[DEBUG] Token: {token[:10]}...", flush=True)
                     return token
+                return None
         except Exception as e:
-            print(f"[DEBUG] Error getting token: {e}", flush=True)
-        return None
+            raise Exception(f"Failed to validate cookie: {str(e)}")
 
     async def upload_audio(self, file_bytes: bytes, filename: str, name: str = None, description: str = None, group_id: int = None, cookie: str = None):
         if not cookie:
@@ -126,16 +125,9 @@ class RobloxAudioFetcher:
             'X-CSRF-TOKEN': csrf_token
         }
 
-        print("[DEBUG] Uploading audio...", flush=True)
-        print(f"[DEBUG] URL: {url}", flush=True)
-        print(f"[DEBUG] Headers: {headers}", flush=True)
-
         try:
             async with session.post(url, data=data, headers=headers) as resp:
                 result = await resp.text()
-                print(f"[DEBUG] Upload response status: {resp.status}", flush=True)
-                print(f"[DEBUG] Upload response body: {result[:500]}", flush=True)
-
                 if resp.status == 200:
                     try:
                         result_json = json.loads(result)
