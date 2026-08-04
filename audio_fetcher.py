@@ -72,24 +72,6 @@ class RobloxAudioFetcher:
         except:
             return {"moderated": False, "status": "Error"}
 
-    async def _validate_cookie(self, cookie: str):
-        session = await self._get_session()
-        url = "https://www.roblox.com/home"
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Cookie": f'.ROBLOSECURITY={cookie}'
-        }
-        try:
-            async with session.get(url, headers=headers, allow_redirects=False) as resp:
-                if resp.status == 200:
-                    return True, "Valid"
-                elif resp.status in (302, 301, 303):
-                    return False, "Redirected to login – cookie expired or invalid"
-                else:
-                    return False, f"Unexpected status {resp.status}"
-        except Exception as e:
-            return False, f"Request error: {str(e)}"
-
     async def _get_csrf_token(self, cookie: str):
         session = await self._get_session()
         url = "https://www.roblox.com/"
@@ -97,27 +79,24 @@ class RobloxAudioFetcher:
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "Cookie": f'.ROBLOSECURITY={cookie}'
         }
+        print("[DEBUG] Getting CSRF token from www.roblox.com...", flush=True)
         try:
             async with session.get(url, headers=headers) as resp:
                 token = resp.headers.get('X-CSRF-TOKEN')
+                print(f"[DEBUG] Response status: {resp.status}", flush=True)
+                print(f"[DEBUG] X-CSRF-TOKEN present: {bool(token)}", flush=True)
                 if token:
+                    print(f"[DEBUG] Token: {token[:10]}...", flush=True)
                     return token
-                # Fallback: try the asset delivery endpoint
-                fallback_url = "https://assetdelivery.roblox.com/v1/asset/"
-                async with session.get(fallback_url, headers=headers) as resp2:
-                    token2 = resp2.headers.get('X-CSRF-TOKEN')
-                    return token2
-        except:
-            return None
+        except Exception as e:
+            print(f"[DEBUG] Error getting token: {e}", flush=True)
+        return None
 
     async def upload_audio(self, file_bytes: bytes, filename: str, name: str = None, description: str = None, group_id: int = None, cookie: str = None):
         if not cookie:
             raise Exception(".ROBLOSECURITY cookie is required for uploads.")
 
-        # Validate cookie first
-        valid, msg = await self._validate_cookie(cookie)
-        if not valid:
-            raise Exception(f"Invalid cookie: {msg}. Please check your .ROBLOSECURITY_UPLOAD environment variable.")
+        session = await self._get_session()
 
         csrf_token = await self._get_csrf_token(cookie)
         if not csrf_token:
@@ -147,9 +126,16 @@ class RobloxAudioFetcher:
             'X-CSRF-TOKEN': csrf_token
         }
 
+        print("[DEBUG] Uploading audio...", flush=True)
+        print(f"[DEBUG] URL: {url}", flush=True)
+        print(f"[DEBUG] Headers: {headers}", flush=True)
+
         try:
             async with session.post(url, data=data, headers=headers) as resp:
                 result = await resp.text()
+                print(f"[DEBUG] Upload response status: {resp.status}", flush=True)
+                print(f"[DEBUG] Upload response body: {result[:500]}", flush=True)
+
                 if resp.status == 200:
                     try:
                         result_json = json.loads(result)
