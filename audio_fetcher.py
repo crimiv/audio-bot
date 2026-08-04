@@ -72,7 +72,7 @@ class RobloxAudioFetcher:
         except:
             return {"moderated": False, "status": "Error"}
 
-    async def _get_csrf_token(self, cookie: str):
+    async def _validate_cookie(self, cookie: str):
         session = await self._get_session()
         url = "https://www.roblox.com/"
         headers = {
@@ -81,25 +81,43 @@ class RobloxAudioFetcher:
         }
         try:
             async with session.get(url, headers=headers, allow_redirects=False) as resp:
-                # Check for redirect – means cookie is invalid
-                if resp.status in (301, 302, 303):
-                    raise Exception("Cookie is invalid or expired (redirected to login).")
-                token = resp.headers.get('X-CSRF-TOKEN')
-                if token:
-                    return token
-                return None
+                if resp.status in (301, 302, 303, 307):
+                    return False, "Cookie redirected to login – invalid or expired"
+                elif resp.status == 200:
+                    return True, "Valid"
+                else:
+                    return False, f"Unexpected status {resp.status}"
         except Exception as e:
-            raise Exception(f"Failed to validate cookie: {str(e)}")
+            return False, f"Request error: {str(e)}"
+
+    async def _get_csrf_token(self, cookie: str):
+        session = await self._get_session()
+        url = "https://www.roblox.com/"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Cookie": f'.ROBLOSECURITY={cookie}'
+        }
+        try:
+            async with session.get(url, headers=headers) as resp:
+                token = resp.headers.get('X-CSRF-TOKEN')
+                return token
+        except:
+            return None
 
     async def upload_audio(self, file_bytes: bytes, filename: str, name: str = None, description: str = None, group_id: int = None, cookie: str = None):
         if not cookie:
             raise Exception(".ROBLOSECURITY cookie is required for uploads.")
 
+        # Validate first
+        valid, msg = await self._validate_cookie(cookie)
+        if not valid:
+            raise Exception(f"Cookie is invalid: {msg}")
+
         session = await self._get_session()
 
         csrf_token = await self._get_csrf_token(cookie)
         if not csrf_token:
-            raise Exception("Could not retrieve CSRF token. The cookie may be invalid or expired.")
+            raise Exception("Could not retrieve CSRF token after valid cookie – unexpected.")
 
         if not name:
             name = os.path.splitext(filename)[0]
