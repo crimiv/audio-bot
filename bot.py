@@ -107,7 +107,7 @@ async def audioinfo(interaction: discord.Interaction, asset: str):
         except Exception as followup_err:
             print(f"⚠️ Could not send error message: {followup_err}", flush=True)
 
-# Simple ping command to test if the bot is alive
+# Simple ping command
 @bot.tree.command(name="ping", description="Check if the bot is alive")
 async def ping(interaction: discord.Interaction):
     await interaction.response.send_message("🏓 Pong!")
