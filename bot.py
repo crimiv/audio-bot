@@ -177,7 +177,7 @@ async def track(interaction: discord.Interaction, action: str, asset: str = None
     else:
         await interaction.followup.send("Invalid action. Use add, remove, or list.")
 
-@bot.tree.command(name="upload", description="Upload an audio file to Roblox")
+@bot.tree.command(name="upload", description="Upload an audio file to Roblox (uploads to group 11425892)")
 @app_commands.describe(file="The audio file to upload", name="Name of the asset (optional)", description="Description of the asset (optional)")
 async def upload(interaction: discord.Interaction, file: discord.Attachment, name: str = None, description: str = None):
     await interaction.response.defer()
@@ -196,7 +196,8 @@ async def upload(interaction: discord.Interaction, file: discord.Attachment, nam
             await interaction.followup.send("File too large. Maximum size is 10 MB.")
             return
 
-        asset_id = await fetcher.upload_audio(file_bytes, file.filename, name, description, cookie=UPLOAD_COOKIE)
+        # Upload to group 11425892
+        asset_id = await fetcher.upload_audio(file_bytes, file.filename, name, description, group_id=11425892, cookie=UPLOAD_COOKIE)
 
         tracking_data = load_tracking()
         assets = tracking_data.get("assets", {})
