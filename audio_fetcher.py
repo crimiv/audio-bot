@@ -28,10 +28,10 @@ class RobloxAudioFetcher:
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         }
         if ROBLOX_SECURITY:
-            headers['Cookie'] = f'.ROBLOSECURITY={ROBLOX_SECURITY}'
+            headers['Cookie'] = f'ROBLOSECURITY={ROBLOX_SECURITY}'
             print(f"🔐 Authenticating request for asset {asset_id}", flush=True)
         else:
-            print("⚠️ No .ROBLOSECURITY cookie set – using public access", flush=True)
+            print("⚠️ No ROBLOSECURITY cookie set – using public access", flush=True)
 
         timeout = aiohttp.ClientTimeout(total=30)
         print(f"📡 Fetching asset {asset_id}...", flush=True)
