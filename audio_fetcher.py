@@ -91,7 +91,7 @@ class RobloxAudioFetcher:
                             os.unlink(tmp_path)
                             return audio_data
                         else:
-                            raise Exception(f"Unexpected JSON: {json.dumps(data)[:200]}")
+                            raise Exception("Unexpected response from Roblox")
                     except json.JSONDecodeError:
                         pass
 
@@ -99,11 +99,11 @@ class RobloxAudioFetcher:
                     try:
                         text = initial_data.decode('utf-8')
                         if '<html' in text.lower():
-                            raise Exception("Roblox returned an HTML error page")
+                            raise Exception("Roblox returned an error page – invalid asset?")
                         else:
-                            raise Exception(f"Downloaded file is only {len(initial_data)} bytes")
+                            raise Exception("Downloaded file is too small – not a valid audio file.")
                     except UnicodeDecodeError:
-                        raise Exception(f"Downloaded file is only {len(initial_data)} bytes")
+                        raise Exception("Downloaded file is not valid audio.")
 
                 return initial_data
 
@@ -162,7 +162,7 @@ class RobloxAudioFetcher:
             "lufs": round(lufs, 2) if lufs != -float('inf') else "N/A",
             "waveform": waveform,
             "max_val": max_val,
-            "file_size": len(audio.raw_data)  # approximate
+            "file_size": len(audio.raw_data)
         }
 
     async def analyze_audio(self, audio_data: bytes):
@@ -179,8 +179,10 @@ class RobloxAudioFetcher:
             del audio
             gc.collect()
             return result
-        except CouldntDecodeError as e:
-            raise Exception(f"Failed to decode audio: {str(e)[:200]}")
+        except CouldntDecodeError:
+            raise Exception("Invalid or unsupported audio file. The asset may not be a playable audio.")
+        except Exception as e:
+            raise Exception(f"Failed to process audio: {str(e)[:200]}")
         finally:
             if os.path.exists(tmp_path):
                 os.unlink(tmp_path)
