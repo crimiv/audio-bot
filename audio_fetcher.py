@@ -74,30 +74,17 @@ class RobloxAudioFetcher:
 
     async def _get_csrf_token(self, cookie: str):
         session = await self._get_session()
-        # Try POST first – triggers 403 but returns token in headers
-        url = "https://assetdelivery.roblox.com/v1/assetId/upload?assetId=0"
+        url = "https://www.roblox.com/"
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Cookie": f'.ROBLOSECURITY={cookie}',
-            "Accept": "application/json"
+            "Cookie": f'.ROBLOSECURITY={cookie}'
         }
         try:
-            async with session.post(url, headers=headers) as resp:
+            async with session.get(url, headers=headers) as resp:
                 token = resp.headers.get('X-CSRF-TOKEN')
-                if token:
-                    return token
+                return token
         except:
-            pass
-
-        # Fallback: GET request to asset endpoint
-        try:
-            async with session.get("https://assetdelivery.roblox.com/v1/asset/", headers=headers) as resp:
-                token = resp.headers.get('X-CSRF-TOKEN')
-                if token:
-                    return token
-        except:
-            pass
-        return None
+            return None
 
     async def upload_audio(self, file_bytes: bytes, filename: str, name: str = None, description: str = None, group_id: int = None, cookie: str = None):
         if not cookie:
