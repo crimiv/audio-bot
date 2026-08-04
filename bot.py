@@ -4,11 +4,28 @@ from discord.ext import commands
 import asyncio
 import io
 import re
+import os   # added for debug
 
 from config import DISCORD_TOKEN
 from audio_fetcher import RobloxAudioFetcher
 from waveform import generate_waveform_image, waveform_to_bytes
 
+# ========== DEBUG BLOCK ==========
+print("🔍 DEBUG: Checking token...")
+print(f"   DISCORD_TOKEN from config.py: {'*' * len(DISCORD_TOKEN) if DISCORD_TOKEN else 'None'}")
+print(f"   os.getenv('DISCORD_TOKEN'): {'*' * len(os.getenv('DISCORD_TOKEN', '')) if os.getenv('DISCORD_TOKEN') else 'None'}")
+print(f"   os.environ keys: {list(os.environ.keys())}")
+if not DISCORD_TOKEN:
+    print("❌ ERROR: DISCORD_TOKEN is empty! Bot will not start.")
+    # We'll let it crash later, but print a clear error.
+print("===============================")
+# ===================================
+
+# Exit if token is missing – avoids the traceback
+if not DISCORD_TOKEN:
+    raise SystemExit("❌ DISCORD_TOKEN not set. Please add it to Railway environment variables.")
+
+# Bot setup
 intents = discord.Intents.default()
 intents.message_content = True
 
@@ -40,9 +57,9 @@ async def on_ready():
 
 @bot.tree.command(name="ping", description="Check if the bot is alive")
 async def ping(interaction: discord.Interaction):
-    print("🏓 Ping command received!", flush=True)  # This will show in logs
-    await interaction.response.defer()  # Acknowledge the interaction
-    await interaction.followup.send("🏓 Pong!")  # Send the response
+    print("🏓 Ping command received!", flush=True)
+    await interaction.response.defer()
+    await interaction.followup.send("🏓 Pong!")
 
 @bot.tree.command(name="audioinfo", description="Get detailed info about a Roblox audio asset")
 @app_commands.describe(asset="Roblox audio asset ID or URL")
