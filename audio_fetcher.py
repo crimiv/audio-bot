@@ -8,7 +8,7 @@ import gc
 from pydub import AudioSegment
 from pydub.exceptions import CouldntDecodeError
 from pydub.utils import mediainfo
-from config import MAIN_COOKIE, UPLOAD_COOKIE
+from config import MAIN_COOKIE
 
 MAX_AUDIO_SIZE = 8 * 1024 * 1024
 
@@ -108,7 +108,6 @@ class RobloxAudioFetcher:
         if not cookie:
             raise Exception(".ROBLOSECURITY cookie is required for uploads.")
 
-        # Validate first
         valid, msg = await self._validate_cookie(cookie)
         if not valid:
             raise Exception(f"Cookie is invalid: {msg}")
