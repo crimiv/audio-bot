@@ -4,6 +4,7 @@ import tempfile
 import os
 import math
 import json
+import gc
 from pydub import AudioSegment
 from pydub.exceptions import CouldntDecodeError
 from pydub.utils import mediainfo
@@ -48,11 +49,24 @@ class RobloxAudioFetcher:
                         if 'location' in data:
                             location_url = data['location']
                             print(f"📡 Following CDN redirect to: {location_url}", flush=True)
+                            # Stream download directly to a temp file to save memory
                             async with session.get(location_url, headers=headers, timeout=timeout) as cdn_resp:
-                                print(f"📡 CDN response status: {cdn_resp.status}", flush=True)
                                 if cdn_resp.status != 200:
                                     raise Exception(f"CDN returned HTTP {cdn_resp.status}")
-                                audio_data = await cdn_resp.read()
+                                # Write to temp file as we stream
+                                with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp:
+                                    tmp_path = tmp.name
+                                    while True:
+                                        chunk = await cdn_resp.content.read(8192)
+                                        if not chunk:
+                                            break
+                                        tmp.write(chunk)
+                                # Read the file back into memory (only if we need to, but we can just return the path)
+                                # However, the rest of the code expects bytes. We'll read it, but we can also change analyze to accept a path.
+                                # To minimize memory, we'll read the file into bytes only once.
+                                with open(tmp_path, 'rb') as f:
+                                    audio_data = f.read()
+                                os.unlink(tmp_path)
                                 print(f"📡 Downloaded {len(audio_data)} bytes from CDN", flush=True)
                                 return audio_data
                         raise Exception(f"Roblox returned unexpected JSON: {json.dumps(data)[:200]}")
@@ -79,11 +93,17 @@ class RobloxAudioFetcher:
             raise
 
     async def analyze_audio(self, audio_data: bytes):
+        # Write to temp file
         with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp:
             tmp.write(audio_data)
             tmp_path = tmp.name
 
+        # Free the audio_data bytes early to reduce memory
+        del audio_data
+        gc.collect()
+
         try:
+            # Load audio from file (pydub uses ffmpeg, may use lots of memory)
             audio = AudioSegment.from_file(tmp_path)
             duration = len(audio) / 1000.0
             sample_rate = audio.frame_rate
@@ -91,6 +111,7 @@ class RobloxAudioFetcher:
             bit_depth = sample_width * 8
             channels = audio.channels
 
+            # Get bitrate
             info = mediainfo(tmp_path)
             bitrate = info.get("bit_rate", "N/A")
             if bitrate != "N/A" and isinstance(bitrate, str):
@@ -100,21 +121,31 @@ class RobloxAudioFetcher:
                 except ValueError:
                     pass
 
+            # Get samples as array (this can be memory heavy)
             samples = audio.get_array_of_samples()
             max_val = 2 ** (bit_depth - 1)
+
+            # Compute RMS
             if len(samples) > 0:
-                float_samples = [s / max_val for s in samples]
-                rms = math.sqrt(sum(s**2 for s in float_samples) / len(float_samples))
+                # Use a simple sum of squares without converting to floats first
+                sum_sq = sum(s * s for s in samples)
+                rms = math.sqrt(sum_sq / len(samples)) / max_val
                 dbfs = 20 * math.log10(rms) if rms > 0 else -float('inf')
             else:
-                dbfs = -float('inf')
                 rms = 0
+                dbfs = -float('inf')
 
             lufs = 20 * math.log10(rms) - 0.691 if rms > 0 else -float('inf')
 
-            num_points = 1000
+            # Downsample waveform – reduce to 500 points to lower memory usage
+            num_points = 500
             step = max(1, len(samples) // num_points)
             waveform = [samples[i] / max_val for i in range(0, len(samples), step)]
+
+            # Free samples and audio object
+            del samples
+            del audio
+            gc.collect()
 
             return {
                 "duration": round(duration, 2),
@@ -135,6 +166,7 @@ class RobloxAudioFetcher:
         finally:
             if os.path.exists(tmp_path):
                 os.unlink(tmp_path)
+            gc.collect()
 
     async def close(self):
         if self.session:
