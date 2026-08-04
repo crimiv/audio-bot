@@ -10,7 +10,7 @@ from audio_fetcher import RobloxAudioFetcher
 from waveform import generate_waveform_image, waveform_to_bytes
 
 if not DISCORD_TOKEN:
-    raise SystemExit("❌ DISCORD_TOKEN not set.")
+    raise SystemExit("❌ DISCORD_TOKEN not set. Please add it to Railway environment variables.")
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -41,11 +41,25 @@ async def on_ready():
     except Exception as e:
         print(f"❌ Failed to sync commands: {e}", flush=True)
 
+# ========== DEBUG: Log every interaction ==========
+@bot.event
+async def on_interaction(interaction: discord.Interaction):
+    print(f"📩 Interaction received: {interaction.type} | Command: {interaction.data.get('name') if interaction.data else 'None'}", flush=True)
+    # The interaction will continue to the command handler automatically.
+
+# ========== TRADITIONAL PREFIX COMMAND (for testing) ==========
+@bot.command(name="ping")
+async def ping_text(ctx):
+    print("🏓 !ping (text) received!", flush=True)
+    await ctx.send("🏓 Pong! (text command)")
+
+# ========== SLASH COMMAND: /ping ==========
 @bot.tree.command(name="ping", description="Check if the bot is alive")
 async def ping(interaction: discord.Interaction):
-    print("🏓 Ping command received!", flush=True)
+    print("🏓 /ping command received!", flush=True)
     await interaction.response.send_message("🏓 Pong!")
 
+# ========== SLASH COMMAND: /audioinfo ==========
 @bot.tree.command(name="audioinfo", description="Get detailed info about a Roblox audio asset")
 @app_commands.describe(asset="Roblox audio asset ID or URL")
 async def audioinfo(interaction: discord.Interaction, asset: str):
