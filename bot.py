@@ -38,6 +38,12 @@ async def on_ready():
     except Exception as e:
         print(f"❌ Failed to sync commands: {e}", flush=True)
 
+@bot.tree.command(name="ping", description="Check if the bot is alive")
+async def ping(interaction: discord.Interaction):
+    print("🏓 Ping command received!", flush=True)  # This will show in logs
+    await interaction.response.defer()  # Acknowledge the interaction
+    await interaction.followup.send("🏓 Pong!")  # Send the response
+
 @bot.tree.command(name="audioinfo", description="Get detailed info about a Roblox audio asset")
 @app_commands.describe(asset="Roblox audio asset ID or URL")
 async def audioinfo(interaction: discord.Interaction, asset: str):
@@ -106,10 +112,6 @@ async def audioinfo(interaction: discord.Interaction, asset: str):
             await interaction.followup.send(f"❌ Error: {error_msg}")
         except Exception as followup_err:
             print(f"⚠️ Could not send error message: {followup_err}", flush=True)
-
-@bot.tree.command(name="ping", description="Check if the bot is alive")
-async def ping(interaction: discord.Interaction):
-    await interaction.response.send_message("🏓 Pong!")
 
 async def main():
     async with fetcher:
