@@ -9,7 +9,6 @@ from config import DISCORD_TOKEN
 from audio_fetcher import RobloxAudioFetcher
 from waveform import generate_waveform_image, waveform_to_bytes
 
-# Bot setup
 intents = discord.Intents.default()
 intents.message_content = True
 
@@ -17,7 +16,6 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 fetcher = RobloxAudioFetcher()
 
 def extract_asset_id(input_str: str) -> int:
-    """Extract Roblox asset ID from various formats."""
     if input_str.isdigit():
         return int(input_str)
     match = re.search(r'rbxassetid://(\d+)', input_str)
@@ -44,9 +42,11 @@ async def on_ready():
 @app_commands.describe(asset="Roblox audio asset ID or URL")
 async def audioinfo(interaction: discord.Interaction, asset: str):
     await interaction.response.defer()
+    print(f"🔄 /audioinfo called for asset: {asset}")
 
     try:
         asset_id = extract_asset_id(asset)
+        print(f"🔍 Extracted asset ID: {asset_id}")
     except ValueError as e:
         await interaction.followup.send(f"❌ {str(e)}")
         return
@@ -57,9 +57,11 @@ async def audioinfo(interaction: discord.Interaction, asset: str):
             await interaction.followup.send("❌ Failed to download audio (file too small or invalid)")
             return
 
+        print("📊 Analyzing audio...")
         info = await fetcher.analyze_audio(audio_data)
+        print("📊 Analysis complete.")
 
-        # Generate waveform
+        print("🎨 Generating waveform image...")
         waveform_img = generate_waveform_image(
             info["waveform"],
             width=600,
@@ -69,6 +71,7 @@ async def audioinfo(interaction: discord.Interaction, asset: str):
         )
         img_bytes = waveform_to_bytes(waveform_img)
         file = discord.File(io.BytesIO(img_bytes), filename="waveform.png")
+        print("🎨 Waveform generated.")
 
         embed = discord.Embed(
             title="🎵 Roblox Audio Info",
@@ -86,9 +89,14 @@ async def audioinfo(interaction: discord.Interaction, asset: str):
         embed.set_footer(text="Data fetched from Roblox • Waveform visualization")
 
         await interaction.followup.send(embed=embed, file=file)
+        print("✅ Command completed successfully.")
 
     except Exception as e:
-        await interaction.followup.send(f"❌ Error: {str(e)}")
+        print(f"❌ Error in command: {e}")
+        try:
+            await interaction.followup.send(f"❌ Error: {str(e)}")
+        except Exception as followup_err:
+            print(f"⚠️ Could not send error message: {followup_err}")
 
 async def main():
     async with fetcher:

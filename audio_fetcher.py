@@ -16,24 +16,26 @@ class RobloxAudioFetcher:
         return self.session
 
     async def fetch_audio(self, asset_id: int):
-        """Download audio from Roblox by asset ID, with optional authentication."""
         session = await self._get_session()
         url = f"https://assetdelivery.roblox.com/v1/assetId/{asset_id}"
-        
         headers = {}
         if ROBLOX_SECURITY:
-            # Include the .ROBLOSECURITY cookie if provided
             headers['Cookie'] = f'.ROBLOSECURITY={ROBLOX_SECURITY}'
-            print(f"🔐 Authenticating request for asset {asset_id}")  # optional debug
+            print(f"🔐 Authenticating request for asset {asset_id}")
+        else:
+            print("⚠️ No .ROBLOSECURITY cookie set – using public access")
 
-        async with session.get(url, headers=headers) as resp:
+        timeout = aiohttp.ClientTimeout(total=30)  # 30 seconds
+        print(f"📡 Fetching asset {asset_id}...")
+        async with session.get(url, headers=headers, timeout=timeout) as resp:
+            print(f"📡 Response status: {resp.status}")
             if resp.status != 200:
                 raise Exception(f"Failed to fetch asset: HTTP {resp.status}")
             audio_data = await resp.read()
-        return audio_data
+            print(f"📡 Downloaded {len(audio_data)} bytes")
+            return audio_data
 
     async def analyze_audio(self, audio_data: bytes):
-        """Analyze audio and return metadata."""
         with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp:
             tmp.write(audio_data)
             tmp_path = tmp.name
@@ -67,7 +69,6 @@ class RobloxAudioFetcher:
 
             lufs = 20 * math.log10(rms) - 0.691 if rms > 0 else -float('inf')
 
-            # Downsample waveform
             num_points = 1000
             step = max(1, len(samples) // num_points)
             waveform = [samples[i] / max_val for i in range(0, len(samples), step)]
@@ -91,7 +92,6 @@ class RobloxAudioFetcher:
         if self.session:
             await self.session.close()
 
-    # Async context manager support
     async def __aenter__(self):
         return self
 
