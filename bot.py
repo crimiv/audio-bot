@@ -36,7 +36,7 @@ async def process_audio(asset_input: str):
     asset_id = extract_asset_id(asset_input)
     audio_data = await fetcher.fetch_audio(asset_id)
     if not audio_data or len(audio_data) < 1000:
-        raise Exception("Downloaded file is too small – not a valid audio asset.")
+        raise Exception("Downloaded file is too small")
     info = await fetcher.analyze_audio(audio_data)
     return asset_id, info
 
@@ -47,39 +47,36 @@ async def on_ready():
     except Exception:
         pass
 
-# ========== SLASH COMMAND ==========
 @bot.tree.command(name="audioinfo", description="Get detailed info about a Roblox audio asset")
 @app_commands.describe(asset="Roblox audio asset ID or URL")
 async def audioinfo_slash(interaction: discord.Interaction, asset: str):
     await interaction.response.defer()
     try:
         asset_id, info = await asyncio.wait_for(process_audio(asset), timeout=25.0)
-        await send_audio_info(interaction.followup, asset_id, info, is_slash=True)
+        await send_audio_info(interaction.followup, asset_id, info)
     except asyncio.TimeoutError:
-        await interaction.followup.send("Command timed out – Roblox may be slow or the file is too large.")
+        await interaction.followup.send("Command timed out.")
     except Exception as e:
         error_msg = str(e)
         if len(error_msg) > 1900:
-            error_msg = error_msg[:1900] + "… (truncated)"
+            error_msg = error_msg[:1900] + "…"
         await interaction.followup.send(f"Error: {error_msg}")
 
-# ========== PREFIX COMMAND ==========
 @bot.command(name="audioinfo", aliases=["ai"])
 async def audioinfo_prefix(ctx: commands.Context, *, asset: str):
     async with ctx.typing():
         try:
             asset_id, info = await asyncio.wait_for(process_audio(asset), timeout=25.0)
-            await send_audio_info(ctx, asset_id, info, is_slash=False)
+            await send_audio_info(ctx, asset_id, info)
         except asyncio.TimeoutError:
-            await ctx.send("Command timed out – Roblox may be slow or the file is too large.")
+            await ctx.send("Command timed out.")
         except Exception as e:
             error_msg = str(e)
             if len(error_msg) > 1900:
-                error_msg = error_msg[:1900] + "… (truncated)"
+                error_msg = error_msg[:1900] + "…"
             await ctx.send(f"Error: {error_msg}")
 
-# ========== SHARED RESPONSE BUILDER ==========
-async def send_audio_info(destination, asset_id: int, info: dict, is_slash: bool):
+async def send_audio_info(destination, asset_id: int, info: dict):
     duration_minutes = round(info["duration"] / 60, 1)
 
     waveform_img = generate_waveform_image(
@@ -107,10 +104,7 @@ async def send_audio_info(destination, asset_id: int, info: dict, is_slash: bool
     embed.set_image(url="attachment://waveform.png")
     embed.set_footer(text="Data fetched from Roblox")
 
-    if is_slash:
-        await destination.send(embed=embed, file=file)
-    else:
-        await destination.send(embed=embed, file=file)
+    await destination.send(embed=embed, file=file)
 
 async def main():
     async with fetcher:

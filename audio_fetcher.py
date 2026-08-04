@@ -25,7 +25,7 @@ class RobloxAudioFetcher:
         session = await self._get_session()
         url = f"https://assetdelivery.roblox.com/v1/assetId/{asset_id}"
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         }
         if ROBLOX_SECURITY:
             headers['Cookie'] = f'.ROBLOSECURITY={ROBLOX_SECURITY}'
@@ -87,7 +87,7 @@ class RobloxAudioFetcher:
 
     async def analyze_audio(self, audio_data: bytes):
         if len(audio_data) > MAX_AUDIO_SIZE:
-            raise Exception(f"Audio file too large: {len(audio_data)//1024//1024} MB")
+            raise Exception(f"Audio file too large: {len(audio_data)//1024//1024} MB (max {MAX_AUDIO_SIZE//1024//1024} MB)")
 
         with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp:
             tmp.write(audio_data)
@@ -126,18 +126,7 @@ class RobloxAudioFetcher:
 
             lufs = 20 * math.log10(rms) - 0.691 if rms > 0 else -float('inf')
 
-            target_points = 800
-            step = max(1, len(samples) // target_points)
-            waveform = []
-
-            for i in range(0, len(samples), step):
-                chunk = samples[i:i+step]
-                if chunk:
-                    peak = max(abs(s) for s in chunk)
-                    waveform.append(peak / max_val)
-
-            if len(waveform) < 100:
-                waveform = waveform + [0] * (100 - len(waveform))
+            waveform = self._compute_waveform_rms(samples, max_val, num_points=400)
 
             del samples
             del audio
@@ -161,6 +150,18 @@ class RobloxAudioFetcher:
             if os.path.exists(tmp_path):
                 os.unlink(tmp_path)
             gc.collect()
+
+    def _compute_waveform_rms(self, samples, max_val, num_points=400):
+        if not samples:
+            return []
+        block_size = max(1, len(samples) // num_points)
+        waveform = []
+        for i in range(0, len(samples), block_size):
+            block = samples[i:i+block_size]
+            if block:
+                rms = math.sqrt(sum(s*s for s in block) / len(block)) / max_val
+                waveform.append(rms)
+        return waveform
 
     async def close(self):
         if self.session:
