@@ -178,8 +178,8 @@ async def track(interaction: discord.Interaction, action: str, asset: str = None
         await interaction.followup.send("Invalid action. Use add, remove, or list.")
 
 @bot.tree.command(name="upload", description="Upload an audio file to Roblox (uploads to group 11425892)")
-@app_commands.describe(file="The audio file to upload", name="Name of the asset (optional)", description="Description of the asset (optional)")
-async def upload(interaction: discord.Interaction, file: discord.Attachment, name: str = None, description: str = None):
+@app_commands.describe(file="The audio file to upload")
+async def upload(interaction: discord.Interaction, file: discord.Attachment):
     await interaction.response.defer()
 
     if not UPLOAD_COOKIE:
@@ -191,14 +191,37 @@ async def upload(interaction: discord.Interaction, file: discord.Attachment, nam
         return
 
     try:
+        # Read the original file
         file_bytes = await file.read()
         if len(file_bytes) > 10 * 1024 * 1024:
             await interaction.followup.send("File too large. Maximum size is 10 MB.")
             return
 
-        # Upload to group 11425892
-        asset_id = await fetcher.upload_audio(file_bytes, file.filename, name, description, group_id=11425892, cookie=UPLOAD_COOKIE)
+        # Load audio from bytes
+        audio = AudioSegment.from_file(io.BytesIO(file_bytes), format=file.filename.split('.')[-1])
 
+        # Check duration and trim if over 7 minutes (420 seconds)
+        MAX_DURATION_SEC = 419  # 6:59
+        if len(audio) > MAX_DURATION_SEC * 1000:
+            audio = audio[:MAX_DURATION_SEC * 1000]
+            await interaction.followup.send(f"Audio trimmed to {MAX_DURATION_SEC//60}:{MAX_DURATION_SEC%60:02d} (max 7 minutes).")
+
+        # Export to MP3 in memory
+        mp3_bytes = io.BytesIO()
+        audio.export(mp3_bytes, format="mp3", bitrate="192k")
+        mp3_bytes.seek(0)
+
+        # Upload with forced name and description
+        asset_id = await fetcher.upload_audio(
+            mp3_bytes.read(),
+            "audio.mp3",
+            name="Audio",
+            description="Audio",
+            group_id=11425892,
+            cookie=UPLOAD_COOKIE
+        )
+
+        # Auto-track the uploaded asset
         tracking_data = load_tracking()
         assets = tracking_data.get("assets", {})
         assets[str(asset_id)] = {"user_id": interaction.user.id, "moderated": False}
