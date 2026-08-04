@@ -5,6 +5,7 @@ from pydub import AudioSegment
 from pydub.utils import mediainfo
 import tempfile
 import os
+import math
 
 class RobloxAudioFetcher:
     def __init__(self):
@@ -68,11 +69,9 @@ class RobloxAudioFetcher:
             # Calculate dBFS (decibels relative to full scale)
             # Get raw samples and compute RMS
             samples = audio.get_array_of_samples()
-            import math
-            # Convert to float and compute RMS
+            # Normalize based on sample width
+            max_val = 2 ** (bit_depth - 1)
             if len(samples) > 0:
-                # Normalize based on sample width
-                max_val = 2 ** (bit_depth - 1)
                 float_samples = [s / max_val for s in samples]
                 rms = math.sqrt(sum(s**2 for s in float_samples) / len(float_samples))
                 if rms > 0:
@@ -81,9 +80,9 @@ class RobloxAudioFetcher:
                     dbfs = -float('inf')
             else:
                 dbfs = -float('inf')
+                rms = 0
             
             # Estimate LUFS (simplified - for accurate LUFS use external lib)
-            # We'll use RMS as a proxy and approximate
             if rms > 0:
                 lufs = 20 * math.log10(rms) - 0.691  # Rough approximation
             else:
@@ -115,3 +114,10 @@ class RobloxAudioFetcher:
     async def close(self):
         if self.session:
             await self.session.close()
+
+    # Async context manager support (FIX)
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        await self.close()
