@@ -37,8 +37,72 @@ class RobloxAudioFetcher:
                 print(f"📡 Downloaded {len(audio_data)} bytes", flush=True)
                 return audio_data
         except asyncio.TimeoutError:
-            print(f"❌ Request timed out after 30 seconds for asset {asset_id}", flush=True)
+            print(f"❌ Request timed out after 30 seconds", flush=True)
             raise Exception("Request to Roblox timed out. The asset may be too large or the server is slow.")
         except Exception as e:
             print(f"❌ Request failed: {e}", flush=True)
             raise
+
+    async def analyze_audio(self, audio_data: bytes):
+        with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp:
+            tmp.write(audio_data)
+            tmp_path = tmp.name
+
+        try:
+            audio = AudioSegment.from_file(tmp_path)
+            duration = len(audio) / 1000.0
+            sample_rate = audio.frame_rate
+            sample_width = audio.sample_width
+            bit_depth = sample_width * 8
+            channels = audio.channels
+
+            info = mediainfo(tmp_path)
+            bitrate = info.get("bit_rate", "N/A")
+            if bitrate != "N/A" and isinstance(bitrate, str):
+                try:
+                    bitrate_kbps = int(bitrate) // 1000
+                    bitrate = f"{bitrate_kbps} kbps"
+                except ValueError:
+                    pass
+
+            samples = audio.get_array_of_samples()
+            max_val = 2 ** (bit_depth - 1)
+            if len(samples) > 0:
+                float_samples = [s / max_val for s in samples]
+                rms = math.sqrt(sum(s**2 for s in float_samples) / len(float_samples))
+                dbfs = 20 * math.log10(rms) if rms > 0 else -float('inf')
+            else:
+                dbfs = -float('inf')
+                rms = 0
+
+            lufs = 20 * math.log10(rms) - 0.691 if rms > 0 else -float('inf')
+
+            num_points = 1000
+            step = max(1, len(samples) // num_points)
+            waveform = [samples[i] / max_val for i in range(0, len(samples), step)]
+
+            return {
+                "duration": round(duration, 2),
+                "sample_rate": sample_rate,
+                "bit_depth": bit_depth,
+                "channels": channels,
+                "bitrate": bitrate,
+                "dbfs": round(dbfs, 2) if dbfs != -float('inf') else "N/A",
+                "lufs": round(lufs, 2) if lufs != -float('inf') else "N/A",
+                "waveform": waveform,
+                "max_val": max_val
+            }
+        finally:
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+
+    async def close(self):
+        if self.session:
+            await self.session.close()
+
+    # ✅ Async context manager support (FIX)
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        await self.close()
