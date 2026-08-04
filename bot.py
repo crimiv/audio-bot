@@ -9,9 +9,8 @@ from config import DISCORD_TOKEN
 from audio_fetcher import RobloxAudioFetcher
 from waveform import generate_waveform_image, waveform_to_bytes
 
-# Exit if token is missing (debug safety)
 if not DISCORD_TOKEN:
-    raise SystemExit("❌ DISCORD_TOKEN not set. Please add it to Railway environment variables.")
+    raise SystemExit("❌ DISCORD_TOKEN not set.")
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -42,7 +41,6 @@ async def on_ready():
     except Exception as e:
         print(f"❌ Failed to sync commands: {e}", flush=True)
 
-# ========== SIMPLE /ping – NO defer, instant reply ==========
 @bot.tree.command(name="ping", description="Check if the bot is alive")
 async def ping(interaction: discord.Interaction):
     print("🏓 Ping command received!", flush=True)
