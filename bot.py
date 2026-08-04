@@ -46,7 +46,7 @@ async def process_audio(asset_input: str):
     details = await fetcher.fetch_asset_details(asset_id)
     audio_data = await fetcher.fetch_audio(asset_id)
     if not audio_data or len(audio_data) < 1000:
-        raise Exception("Downloaded file is too small")
+        raise Exception("Downloaded file is too small – not a valid audio asset.")
 
     with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp:
         tmp.write(audio_data)
@@ -55,7 +55,7 @@ async def process_audio(asset_input: str):
     try:
         audio = AudioSegment.from_file(tmp_path)
         info = fetcher.analyze_segment(audio)
-        info["file_size"] = len(audio_data)  # actual file size in bytes
+        info["file_size"] = len(audio_data)
 
         ogg_path = None
         if len(audio_data) < 20 * 1024 * 1024:
@@ -118,7 +118,7 @@ async def send_audio_info(destination, asset_id: int, details: dict, info: dict,
     size_str = f"{size_mb:.2f} MB"
 
     creator_name = details.get("name", "Unknown") if details else "Unknown"
-    artist_name = creator_name  # Could be different if we had separate artist field
+    artist_name = creator_name
 
     upload_date = "Unknown"
     if details and details.get("created"):
