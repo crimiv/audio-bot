@@ -6,13 +6,16 @@ import io
 import re
 import tempfile
 import os
+import json
 from datetime import datetime
 from pydub import AudioSegment
 from pydub.exceptions import CouldntDecodeError
 
-from config import DISCORD_TOKEN
+from config import DISCORD_TOKEN, MAIN_COOKIE, UPLOAD_COOKIE
 from audio_fetcher import RobloxAudioFetcher
 from waveform import generate_waveform_image, waveform_to_bytes
+
+TRACKING_FILE = "tracking.json"
 
 if not DISCORD_TOKEN:
     raise SystemExit("DISCORD_TOKEN not set.")
@@ -22,6 +25,16 @@ intents.message_content = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 fetcher = RobloxAudioFetcher()
+
+def load_tracking():
+    if os.path.exists(TRACKING_FILE):
+        with open(TRACKING_FILE, 'r') as f:
+            return json.load(f)
+    return {"assets": {}}
+
+def save_tracking(data):
+    with open(TRACKING_FILE, 'w') as f:
+        json.dump(data, f, indent=2)
 
 def extract_asset_id(input_str: str) -> int:
     if input_str.isdigit():
@@ -44,8 +57,8 @@ def format_duration(seconds):
 
 async def process_audio(asset_input: str):
     asset_id = extract_asset_id(asset_input)
-    details = await fetcher.fetch_asset_details(asset_id)
-    audio_data = await fetcher.fetch_audio(asset_id)
+    details = await fetcher.fetch_asset_details(asset_id, MAIN_COOKIE)
+    audio_data = await fetcher.fetch_audio(asset_id, MAIN_COOKIE)
     if not audio_data or len(audio_data) < 1000:
         raise Exception("Downloaded file is too small – not a valid audio asset.")
 
@@ -54,13 +67,11 @@ async def process_audio(asset_input: str):
         tmp_path = tmp.name
 
     try:
-        # Try to decode with pydub – catch specific error
         try:
             audio = AudioSegment.from_file(tmp_path)
         except CouldntDecodeError:
             raise Exception("Invalid or unsupported audio file. The asset may not be a playable audio.")
         except Exception as e:
-            # Other pydub errors (e.g., file not found)
             raise Exception(f"Failed to process audio: {str(e)[:100]}")
 
         info = fetcher.analyze_segment(audio)
@@ -85,6 +96,121 @@ async def on_ready():
         await bot.tree.sync()
     except Exception:
         pass
+    bot.loop.create_task(check_moderation_status())
+
+async def check_moderation_status():
+    await bot.wait_until_ready()
+    while not bot.is_closed():
+        try:
+            tracking_data = load_tracking()
+            assets = tracking_data.get("assets", {})
+            for asset_id_str, user_id in assets.items():
+                asset_id = int(asset_id_str)
+                status = await fetcher.fetch_asset_moderation_status(asset_id, MAIN_COOKIE)
+                if status.get("moderated", False):
+                    user = await bot.fetch_user(user_id)
+                    if user:
+                        try:
+                            await user.send(f"Asset {asset_id} has been moderated or deleted.")
+                        except:
+                            pass
+                    tracking_data["assets"][asset_id_str] = {"moderated": True, "user_id": user_id}
+                else:
+                    tracking_data["assets"][asset_id_str] = {"moderated": False, "user_id": user_id}
+            save_tracking(tracking_data)
+        except Exception:
+            pass
+        await asyncio.sleep(86400)
+
+@bot.tree.command(name="track", description="Track a Roblox audio asset for moderation changes")
+@app_commands.describe(action="add, remove, or list", asset="Asset ID or URL (for add/remove)")
+async def track(interaction: discord.Interaction, action: str, asset: str = None):
+    await interaction.response.defer()
+    tracking_data = load_tracking()
+    assets = tracking_data.get("assets", {})
+
+    if action.lower() == "add":
+        if not asset:
+            await interaction.followup.send("Please provide an asset ID or URL to track.")
+            return
+        try:
+            asset_id = extract_asset_id(asset)
+        except ValueError as e:
+            await interaction.followup.send(f"Error: {str(e)}")
+            return
+
+        if str(asset_id) in assets:
+            await interaction.followup.send(f"Asset {asset_id} is already being tracked.")
+            return
+
+        assets[str(asset_id)] = {"user_id": interaction.user.id, "moderated": False}
+        tracking_data["assets"] = assets
+        save_tracking(tracking_data)
+        await interaction.followup.send(f"Now tracking asset {asset_id}. You will be notified if it gets moderated.")
+
+    elif action.lower() == "remove":
+        if not asset:
+            await interaction.followup.send("Please provide an asset ID or URL to remove from tracking.")
+            return
+        try:
+            asset_id = extract_asset_id(asset)
+        except ValueError as e:
+            await interaction.followup.send(f"Error: {str(e)}")
+            return
+
+        if str(asset_id) not in assets:
+            await interaction.followup.send(f"Asset {asset_id} is not being tracked.")
+            return
+
+        del assets[str(asset_id)]
+        tracking_data["assets"] = assets
+        save_tracking(tracking_data)
+        await interaction.followup.send(f"Removed asset {asset_id} from tracking.")
+
+    elif action.lower() == "list":
+        if not assets:
+            await interaction.followup.send("You are not tracking any assets.")
+            return
+        asset_list = "\n".join([f"- {aid}" for aid in assets.keys()])
+        await interaction.followup.send(f"Tracked assets:\n{asset_list}")
+
+    else:
+        await interaction.followup.send("Invalid action. Use add, remove, or list.")
+
+@bot.tree.command(name="upload", description="Upload an audio file to Roblox")
+@app_commands.describe(file="The audio file to upload", name="Name of the asset (optional)", description="Description of the asset (optional)")
+async def upload(interaction: discord.Interaction, file: discord.Attachment, name: str = None, description: str = None):
+    await interaction.response.defer()
+
+    if not UPLOAD_COOKIE:
+        await interaction.followup.send("Uploads are not available. Please set .ROBLOSECURITY_UPLOAD environment variable.")
+        return
+
+    if not file.filename.lower().endswith(('.mp3', '.wav', '.ogg', '.flac', '.m4a')):
+        await interaction.followup.send("Unsupported file format. Please upload MP3, WAV, OGG, FLAC, or M4A.")
+        return
+
+    try:
+        file_bytes = await file.read()
+        if len(file_bytes) > 10 * 1024 * 1024:
+            await interaction.followup.send("File too large. Maximum size is 10 MB.")
+            return
+
+        asset_id = await fetcher.upload_audio(file_bytes, file.filename, name, description, cookie=UPLOAD_COOKIE)
+
+        tracking_data = load_tracking()
+        assets = tracking_data.get("assets", {})
+        assets[str(asset_id)] = {"user_id": interaction.user.id, "moderated": False}
+        tracking_data["assets"] = assets
+        save_tracking(tracking_data)
+
+        await interaction.followup.send(f"Upload successful! Asset ID: {asset_id}\nYou will be notified if it gets moderated.")
+
+    except Exception as e:
+        error_msg = str(e)
+        if len(error_msg) > 1900:
+            error_msg = error_msg[:1900] + "…"
+        await interaction.followup.send(f"Upload failed: {error_msg}")
 
 @bot.tree.command(name="audioinfo", description="Get detailed info about a Roblox audio asset")
 @app_commands.describe(asset="Roblox audio asset ID or URL")
@@ -120,6 +246,57 @@ async def audioinfo_prefix(ctx: commands.Context, *, asset: str):
             if len(error_msg) > 1900:
                 error_msg = error_msg[:1900] + "…"
             await ctx.send(f"Error: {error_msg}")
+
+@bot.command(name="track")
+async def track_prefix(ctx: commands.Context, action: str, *, asset: str = None):
+    if not asset and action.lower() != "list":
+        await ctx.send("Please provide an asset ID or URL.")
+        return
+
+    tracking_data = load_tracking()
+    assets = tracking_data.get("assets", {})
+
+    if action.lower() == "add":
+        try:
+            asset_id = extract_asset_id(asset)
+        except ValueError as e:
+            await ctx.send(f"Error: {str(e)}")
+            return
+
+        if str(asset_id) in assets:
+            await ctx.send(f"Asset {asset_id} is already being tracked.")
+            return
+
+        assets[str(asset_id)] = {"user_id": ctx.author.id, "moderated": False}
+        tracking_data["assets"] = assets
+        save_tracking(tracking_data)
+        await ctx.send(f"Now tracking asset {asset_id}. You will be notified if it gets moderated.")
+
+    elif action.lower() == "remove":
+        try:
+            asset_id = extract_asset_id(asset)
+        except ValueError as e:
+            await ctx.send(f"Error: {str(e)}")
+            return
+
+        if str(asset_id) not in assets:
+            await ctx.send(f"Asset {asset_id} is not being tracked.")
+            return
+
+        del assets[str(asset_id)]
+        tracking_data["assets"] = assets
+        save_tracking(tracking_data)
+        await ctx.send(f"Removed asset {asset_id} from tracking.")
+
+    elif action.lower() == "list":
+        if not assets:
+            await ctx.send("You are not tracking any assets.")
+            return
+        asset_list = "\n".join([f"- {aid}" for aid in assets.keys()])
+        await ctx.send(f"Tracked assets:\n{asset_list}")
+
+    else:
+        await ctx.send("Invalid action. Use add, remove, or list.")
 
 async def send_audio_info(destination, asset_id: int, details: dict, info: dict, ogg_path: str = None):
     duration_str = format_duration(info["duration"])

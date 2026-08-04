@@ -8,7 +8,7 @@ import gc
 from pydub import AudioSegment
 from pydub.exceptions import CouldntDecodeError
 from pydub.utils import mediainfo
-from config import ROBLOX_SECURITY
+from config import MAIN_COOKIE, UPLOAD_COOKIE
 
 MAX_AUDIO_SIZE = 8 * 1024 * 1024
 
@@ -21,14 +21,14 @@ class RobloxAudioFetcher:
             self.session = aiohttp.ClientSession()
         return self.session
 
-    async def fetch_asset_details(self, asset_id: int):
+    async def fetch_asset_details(self, asset_id: int, cookie: str = None):
         session = await self._get_session()
         url = f"https://economy.roblox.com/v2/assets/{asset_id}/details"
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         }
-        if ROBLOX_SECURITY:
-            headers['Cookie'] = f'.ROBLOSECURITY={ROBLOX_SECURITY}'
+        if cookie:
+            headers['Cookie'] = f'.ROBLOSECURITY={cookie}'
 
         try:
             async with session.get(url, headers=headers) as resp:
@@ -53,14 +53,84 @@ class RobloxAudioFetcher:
         except:
             return None
 
-    async def fetch_audio(self, asset_id: int):
+    async def fetch_asset_moderation_status(self, asset_id: int, cookie: str = None):
+        session = await self._get_session()
+        url = f"https://economy.roblox.com/v2/assets/{asset_id}/details"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        }
+        if cookie:
+            headers['Cookie'] = f'.ROBLOSECURITY={cookie}'
+
+        try:
+            async with session.get(url, headers=headers) as resp:
+                if resp.status == 200:
+                    return {"moderated": False, "status": "Active"}
+                elif resp.status == 404 or resp.status == 403:
+                    return {"moderated": True, "status": "Moderated or Deleted"}
+                return {"moderated": False, "status": "Unknown"}
+        except:
+            return {"moderated": False, "status": "Error"}
+
+    async def upload_audio(self, file_bytes: bytes, filename: str, name: str = None, description: str = None, group_id: int = None, cookie: str = None):
+        if not cookie:
+            raise Exception(".ROBLOSECURITY cookie is required for uploads.")
+
+        session = await self._get_session()
+
+        if not name:
+            name = os.path.splitext(filename)[0]
+
+        data = aiohttp.FormData()
+        data.add_field('assetId', '0')
+        data.add_field('name', name)
+        if description:
+            data.add_field('description', description)
+        if group_id:
+            data.add_field('groupId', str(group_id))
+        data.add_field('file', file_bytes, filename=filename, content_type='audio/mpeg')
+
+        headers = {
+            'Cookie': f'.ROBLOSECURITY={cookie}',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        }
+
+        try:
+            async with session.post('https://assetdelivery.roblox.com/v1/assetId/upload', data=data, headers=headers) as resp:
+                result = await resp.text()
+                if resp.status == 200:
+                    try:
+                        result_json = json.loads(result)
+                        asset_id = result_json.get('assetId')
+                        if asset_id:
+                            return asset_id
+                        else:
+                            raise Exception("Upload succeeded but no asset ID returned.")
+                    except json.JSONDecodeError:
+                        if 'assetId' in result:
+                            import re
+                            match = re.search(r'assetId["\']?\s*[:=]\s*["\']?(\d+)', result)
+                            if match:
+                                return int(match.group(1))
+                        raise Exception("Upload succeeded but could not parse response.")
+                else:
+                    try:
+                        error_data = json.loads(result)
+                        error_msg = error_data.get('errors', [{}])[0].get('message', 'Unknown error')
+                        raise Exception(f"Upload failed: {error_msg}")
+                    except:
+                        raise Exception(f"Upload failed with status {resp.status}")
+        except Exception as e:
+            raise
+
+    async def fetch_audio(self, asset_id: int, cookie: str = None):
         session = await self._get_session()
         url = f"https://assetdelivery.roblox.com/v1/assetId/{asset_id}"
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         }
-        if ROBLOX_SECURITY:
-            headers['Cookie'] = f'.ROBLOSECURITY={ROBLOX_SECURITY}'
+        if cookie:
+            headers['Cookie'] = f'.ROBLOSECURITY={cookie}'
 
         timeout = aiohttp.ClientTimeout(total=30)
 
