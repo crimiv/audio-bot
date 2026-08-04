@@ -116,7 +116,6 @@ class RobloxAudioFetcher:
             samples = audio.get_array_of_samples()
             max_val = 2 ** (bit_depth - 1)
 
-            # Calculate RMS for dBFS and LUFS
             if len(samples) > 0:
                 sum_sq = sum(s * s for s in samples)
                 rms = math.sqrt(sum_sq / len(samples)) / max_val
@@ -127,23 +126,18 @@ class RobloxAudioFetcher:
 
             lufs = 20 * math.log10(rms) - 0.691 if rms > 0 else -float('inf')
 
-            # Generate accurate waveform using peak values per bin
-            num_bars = 800
-            step = max(1, len(samples) // num_bars)
+            target_points = 800
+            step = max(1, len(samples) // target_points)
             waveform = []
 
             for i in range(0, len(samples), step):
                 chunk = samples[i:i+step]
                 if chunk:
-                    # Use peak value (max absolute) for each bin
                     peak = max(abs(s) for s in chunk)
-                    normalized_peak = peak / max_val
-                    waveform.append(normalized_peak if normalized_peak != 0 else 0)
+                    waveform.append(peak / max_val)
 
-            # If waveform is too short, pad it
             if len(waveform) < 100:
-                waveform = waveform * (100 // len(waveform) + 1)
-                waveform = waveform[:100]
+                waveform = waveform + [0] * (100 - len(waveform))
 
             del samples
             del audio
