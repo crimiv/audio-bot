@@ -22,9 +22,8 @@ if not DISCORD_TOKEN:
     raise SystemExit("DISCORD_TOKEN not set.")
 
 intents = discord.Intents.default()
-intents.message_content = True
 
-bot = commands.Bot(command_prefix="!", intents=intents)
+bot = commands.Bot(command_prefix=None, intents=intents)
 fetcher = RobloxAudioFetcher()
 
 def load_tracking():
@@ -132,6 +131,50 @@ async def check_moderation_status():
         except Exception:
             pass
         await asyncio.sleep(86400)
+
+@bot.tree.command(name="help", description="Show all available commands and how to use them")
+async def help_slash(interaction: discord.Interaction):
+    embed = discord.Embed(
+        title="Help - Available Commands",
+        color=0x00FF88
+    )
+    embed.add_field(
+        name="/audioinfo <asset>",
+        value="Get detailed info about a Roblox audio asset (duration, sample rate, bitrate, waveform, etc.)",
+        inline=False
+    )
+    embed.add_field(
+        name="/track <add|remove|list> [asset]",
+        value="Track assets for moderation changes. You'll be DM'd if an asset gets moderated.",
+        inline=False
+    )
+    embed.add_field(
+        name="/cookie <set|remove|show> [cookie]",
+        value="Set, remove, or show your personal .ROBLOSECURITY cookie for uploads.",
+        inline=False
+    )
+    embed.add_field(
+        name="/checkcookie",
+        value="Check if your stored cookie is valid.",
+        inline=False
+    )
+    embed.add_field(
+        name="/upload (with attachment)",
+        value="Upload an audio file to Roblox (group 11425892). You must set a cookie first.",
+        inline=False
+    )
+    embed.add_field(
+        name="Examples",
+        value=(
+            "`/audioinfo 1845655576`\n"
+            "`/track add 123456`\n"
+            "`/cookie set _|WARNING...`\n"
+            "`/upload` (with attachment)"
+        ),
+        inline=False
+    )
+    embed.set_footer(text="Use /help anytime.")
+    await interaction.response.send_message(embed=embed)
 
 @bot.tree.command(name="cookie", description="Manage your personal Roblox cookie for uploads")
 @app_commands.describe(action="set, remove, or show", cookie="The .ROBLOSECURITY cookie value (for set action)")
@@ -323,111 +366,6 @@ async def audioinfo_slash(interaction: discord.Interaction, asset: str):
         if len(error_msg) > 1900:
             error_msg = error_msg[:1900] + "…"
         await interaction.followup.send(f"Error: {error_msg}")
-
-@bot.command(name="audioinfo", aliases=["ai"])
-async def audioinfo_prefix(ctx: commands.Context, *, asset: str):
-    async with ctx.typing():
-        try:
-            asset_id, details, info, ogg_path, audio = await asyncio.wait_for(process_audio(asset), timeout=25.0)
-            await send_audio_info(ctx, asset_id, details, info, ogg_path)
-            if ogg_path and os.path.exists(ogg_path):
-                os.unlink(ogg_path)
-            del audio
-        except asyncio.TimeoutError:
-            await ctx.send("Command timed out.")
-        except Exception as e:
-            error_msg = str(e)
-            if len(error_msg) > 1900:
-                error_msg = error_msg[:1900] + "…"
-            await ctx.send(f"Error: {error_msg}")
-
-@bot.command(name="track")
-async def track_prefix(ctx: commands.Context, action: str, *, asset: str = None):
-    if not asset and action.lower() != "list":
-        await ctx.send("Please provide an asset ID or URL.")
-        return
-
-    tracking_data = load_tracking()
-    assets = tracking_data.get("assets", {})
-
-    if action.lower() == "add":
-        try:
-            asset_id = extract_asset_id(asset)
-        except ValueError as e:
-            await ctx.send(f"Error: {str(e)}")
-            return
-
-        if str(asset_id) in assets:
-            await ctx.send(f"Asset {asset_id} is already being tracked.")
-            return
-
-        assets[str(asset_id)] = {"user_id": ctx.author.id, "moderated": False}
-        tracking_data["assets"] = assets
-        save_tracking(tracking_data)
-        await ctx.send(f"Now tracking asset {asset_id}. You will be notified if it gets moderated.")
-
-    elif action.lower() == "remove":
-        try:
-            asset_id = extract_asset_id(asset)
-        except ValueError as e:
-            await ctx.send(f"Error: {str(e)}")
-            return
-
-        if str(asset_id) not in assets:
-            await ctx.send(f"Asset {asset_id} is not being tracked.")
-            return
-
-        del assets[str(asset_id)]
-        tracking_data["assets"] = assets
-        save_tracking(tracking_data)
-        await ctx.send(f"Removed asset {asset_id} from tracking.")
-
-    elif action.lower() == "list":
-        if not assets:
-            await ctx.send("You are not tracking any assets.")
-            return
-        asset_list = "\n".join([f"- {aid}" for aid in assets.keys()])
-        await ctx.send(f"Tracked assets:\n{asset_list}")
-
-    else:
-        await ctx.send("Invalid action. Use add, remove, or list.")
-
-@bot.command(name="cookie")
-async def cookie_prefix(ctx: commands.Context, action: str, *, cookie: str = None):
-    user_id = str(ctx.author.id)
-    cookies = load_user_cookies()
-
-    if action.lower() == "set":
-        if not cookie:
-            await ctx.send("Please provide a cookie value.")
-            return
-        if not cookie.startswith("_|WARNING"):
-            await ctx.send("The cookie doesn't look like a valid .ROBLOSECURITY cookie.")
-            return
-        valid, msg = await fetcher._validate_cookie(cookie)
-        if not valid:
-            await ctx.send(f"Cookie validation failed: {msg}")
-            return
-        cookies[user_id] = cookie
-        save_user_cookies(cookies)
-        await ctx.send("Your cookie has been stored successfully!")
-
-    elif action.lower() == "remove":
-        if user_id not in cookies:
-            await ctx.send("You don't have a cookie stored.")
-            return
-        del cookies[user_id]
-        save_user_cookies(cookies)
-        await ctx.send("Your cookie has been removed.")
-
-    elif action.lower() == "show":
-        if user_id in cookies:
-            await ctx.send("You have a cookie stored for uploads.")
-        else:
-            await ctx.send("You don't have a cookie stored.")
-
-    else:
-        await ctx.send("Invalid action. Use `set`, `remove`, or `show`.")
 
 async def send_audio_info(destination, asset_id: int, details: dict, info: dict, ogg_path: str = None):
     duration_str = format_duration(info["duration"])
