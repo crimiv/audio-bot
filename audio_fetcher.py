@@ -25,7 +25,7 @@ class RobloxAudioFetcher:
         session = await self._get_session()
         url = f"https://assetdelivery.roblox.com/v1/assetId/{asset_id}"
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
         }
         if ROBLOX_SECURITY:
             headers['Cookie'] = f'.ROBLOSECURITY={ROBLOX_SECURITY}'
@@ -72,11 +72,11 @@ class RobloxAudioFetcher:
                     try:
                         text = initial_data.decode('utf-8')
                         if '<html' in text.lower():
-                            raise Exception("Roblox returned an HTML error page – invalid or private asset?")
+                            raise Exception("Roblox returned an HTML error page")
                         else:
-                            raise Exception(f"Downloaded file is only {len(initial_data)} bytes – not a valid audio asset.")
+                            raise Exception(f"Downloaded file is only {len(initial_data)} bytes")
                     except UnicodeDecodeError:
-                        raise Exception(f"Downloaded file is only {len(initial_data)} bytes – not a valid audio asset.")
+                        raise Exception(f"Downloaded file is only {len(initial_data)} bytes")
 
                 return initial_data
 
@@ -87,7 +87,7 @@ class RobloxAudioFetcher:
 
     async def analyze_audio(self, audio_data: bytes):
         if len(audio_data) > MAX_AUDIO_SIZE:
-            raise Exception(f"Audio file too large: {len(audio_data)//1024//1024} MB (max {MAX_AUDIO_SIZE//1024//1024} MB)")
+            raise Exception(f"Audio file too large: {len(audio_data)//1024//1024} MB")
 
         with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp:
             tmp.write(audio_data)
@@ -116,6 +116,7 @@ class RobloxAudioFetcher:
             samples = audio.get_array_of_samples()
             max_val = 2 ** (bit_depth - 1)
 
+            # Calculate RMS for dBFS and LUFS
             if len(samples) > 0:
                 sum_sq = sum(s * s for s in samples)
                 rms = math.sqrt(sum_sq / len(samples)) / max_val
@@ -126,9 +127,23 @@ class RobloxAudioFetcher:
 
             lufs = 20 * math.log10(rms) - 0.691 if rms > 0 else -float('inf')
 
-            num_points = 400
-            step = max(1, len(samples) // num_points)
-            waveform = [samples[i] / max_val for i in range(0, len(samples), step)]
+            # Generate accurate waveform using peak values per bin
+            num_bars = 800
+            step = max(1, len(samples) // num_bars)
+            waveform = []
+
+            for i in range(0, len(samples), step):
+                chunk = samples[i:i+step]
+                if chunk:
+                    # Use peak value (max absolute) for each bin
+                    peak = max(abs(s) for s in chunk)
+                    normalized_peak = peak / max_val
+                    waveform.append(normalized_peak if normalized_peak != 0 else 0)
+
+            # If waveform is too short, pad it
+            if len(waveform) < 100:
+                waveform = waveform * (100 // len(waveform) + 1)
+                waveform = waveform[:100]
 
             del samples
             del audio
@@ -147,7 +162,7 @@ class RobloxAudioFetcher:
             }
 
         except CouldntDecodeError as e:
-            raise Exception(f"Failed to decode audio. Error: {str(e)[:200]}")
+            raise Exception(f"Failed to decode audio: {str(e)[:200]}")
         finally:
             if os.path.exists(tmp_path):
                 os.unlink(tmp_path)
