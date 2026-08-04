@@ -20,13 +20,11 @@ class RobloxAudioFetcher:
         return self.session
 
     async def fetch_audio(self, asset_id: int):
-        """
-        Downloads the audio asset and returns a tuple (audio_bytes, file_size).
-        For large files, we stream to a temp file and then return bytes.
-        """
         session = await self._get_session()
         url = f"https://assetdelivery.roblox.com/v1/assetId/{asset_id}"
-        headers = {}
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        }
         if ROBLOX_SECURITY:
             headers['Cookie'] = f'.ROBLOSECURITY={ROBLOX_SECURITY}'
             print(f"🔐 Authenticating request for asset {asset_id}", flush=True)
@@ -42,11 +40,9 @@ class RobloxAudioFetcher:
                 content_type = resp.headers.get('Content-Type', '')
                 print(f"📡 Content-Type: {content_type}", flush=True)
 
-                # Read initial response (might be JSON)
                 initial_data = await resp.read()
                 print(f"📡 Downloaded {len(initial_data)} bytes", flush=True)
 
-                # Handle JSON response (usually contains a location URL)
                 if 'application/json' in content_type:
                     try:
                         data = json.loads(initial_data)
@@ -59,19 +55,26 @@ class RobloxAudioFetcher:
                             # Stream the CDN file to a temp file
                             with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp:
                                 tmp_path = tmp.name
+                                # Use same headers for CDN request
                                 async with session.get(location_url, headers=headers, timeout=timeout) as cdn_resp:
+                                    print(f"📡 CDN response status: {cdn_resp.status}", flush=True)
+                                    print(f"📡 CDN Content-Type: {cdn_resp.headers.get('Content-Type', '')}", flush=True)
                                     if cdn_resp.status != 200:
                                         raise Exception(f"CDN returned HTTP {cdn_resp.status}")
+                                    bytes_downloaded = 0
                                     while True:
                                         chunk = await cdn_resp.content.read(8192)
                                         if not chunk:
                                             break
                                         tmp.write(chunk)
-                            # Read the file into bytes (we need bytes for analyze_audio)
+                                        bytes_downloaded += len(chunk)
+                                        if bytes_downloaded % 100000 == 0:
+                                            print(f"📡 Downloaded {bytes_downloaded} bytes so far...", flush=True)
+                            # Read the file into bytes
                             with open(tmp_path, 'rb') as f:
                                 audio_data = f.read()
                             os.unlink(tmp_path)
-                            print(f"📡 Downloaded {len(audio_data)} bytes from CDN", flush=True)
+                            print(f"📡 Final total: {len(audio_data)} bytes from CDN", flush=True)
                             return audio_data
                         else:
                             raise Exception(f"Unexpected JSON: {json.dumps(data)[:200]}")
@@ -79,7 +82,6 @@ class RobloxAudioFetcher:
                         # Not JSON – maybe it's already audio
                         pass
 
-                # If we get here, we have raw audio data (or an error page)
                 if len(initial_data) < 1000:
                     try:
                         text = initial_data.decode('utf-8')
@@ -90,7 +92,6 @@ class RobloxAudioFetcher:
                     except UnicodeDecodeError:
                         raise Exception(f"Downloaded file is only {len(initial_data)} bytes – not a valid audio asset.")
 
-                # It's audio – return the bytes
                 return initial_data
 
         except asyncio.TimeoutError:
@@ -101,20 +102,14 @@ class RobloxAudioFetcher:
             raise
 
     async def analyze_audio(self, audio_data: bytes):
-        """
-        Analyze audio bytes and return metadata.
-        """
-        # Write to a temporary file for pydub
         with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp:
             tmp.write(audio_data)
             tmp_path = tmp.name
 
-        # Free the bytes object to reduce memory
         del audio_data
         gc.collect()
 
         try:
-            # Load audio from file
             audio = AudioSegment.from_file(tmp_path)
             duration = len(audio) / 1000.0
             sample_rate = audio.frame_rate
@@ -131,7 +126,6 @@ class RobloxAudioFetcher:
                 except ValueError:
                     pass
 
-            # Get samples as array
             samples = audio.get_array_of_samples()
             max_val = 2 ** (bit_depth - 1)
 
@@ -145,12 +139,10 @@ class RobloxAudioFetcher:
 
             lufs = 20 * math.log10(rms) - 0.691 if rms > 0 else -float('inf')
 
-            # Reduce waveform points to 400 to save memory
             num_points = 400
             step = max(1, len(samples) // num_points)
             waveform = [samples[i] / max_val for i in range(0, len(samples), step)]
 
-            # Free large objects
             del samples
             del audio
             gc.collect()
@@ -168,8 +160,7 @@ class RobloxAudioFetcher:
             }
 
         except CouldntDecodeError as e:
-            raise Exception(f"Failed to decode audio. The file may not be a valid MP3. "
-                            f"Error: {str(e)[:200]}")
+            raise Exception(f"Failed to decode audio. Error: {str(e)[:200]}")
         finally:
             if os.path.exists(tmp_path):
                 os.unlink(tmp_path)
