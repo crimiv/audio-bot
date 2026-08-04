@@ -39,19 +39,15 @@ class RobloxAudioFetcher:
                 audio_data = await resp.read()
                 print(f"📡 Downloaded {len(audio_data)} bytes", flush=True)
 
-                # If it's JSON, check for a location (CDN redirect)
                 if 'application/json' in content_type:
                     try:
                         data = json.loads(audio_data)
-                        # Roblox error format
                         if 'errors' in data and data['errors']:
                             error_msg = data['errors'][0].get('message', 'Unknown error')
                             raise Exception(f"Roblox API error: {error_msg}")
-                        # Success: we get a location URL
                         if 'location' in data:
                             location_url = data['location']
                             print(f"📡 Following CDN redirect to: {location_url}", flush=True)
-                            # Fetch the actual audio from the CDN
                             async with session.get(location_url, headers=headers, timeout=timeout) as cdn_resp:
                                 print(f"📡 CDN response status: {cdn_resp.status}", flush=True)
                                 if cdn_resp.status != 200:
@@ -59,13 +55,10 @@ class RobloxAudioFetcher:
                                 audio_data = await cdn_resp.read()
                                 print(f"📡 Downloaded {len(audio_data)} bytes from CDN", flush=True)
                                 return audio_data
-                        # Unexpected JSON
                         raise Exception(f"Roblox returned unexpected JSON: {json.dumps(data)[:200]}")
                     except json.JSONDecodeError:
-                        # Not JSON, treat as binary audio
                         pass
 
-                # If it's too small, it's probably not audio
                 if len(audio_data) < 1000:
                     try:
                         text = audio_data.decode('utf-8')
