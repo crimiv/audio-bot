@@ -81,23 +81,33 @@ class RobloxAudioFetcher:
         if not name:
             name = os.path.splitext(filename)[0]
 
+        # Use the correct Roblox upload endpoint
+        url = "https://assetdelivery.roblox.com/v1/asset"
+
+        # Build the multipart form data
         data = aiohttp.FormData()
-        data.add_field('assetId', '0')
+        data.add_field('assetType', 'Audio')
         data.add_field('name', name)
         if description:
             data.add_field('description', description)
         if group_id:
             data.add_field('groupId', str(group_id))
+        # The file field must be named 'file' and include the content type
         data.add_field('file', file_bytes, filename=filename, content_type='audio/mpeg')
 
         headers = {
             'Cookie': f'.ROBLOSECURITY={cookie}',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'application/json',
+            'Accept-Language': 'en-US,en;q=0.9',
         }
 
         try:
-            async with session.post('https://assetdelivery.roblox.com/v1/assetId/upload', data=data, headers=headers) as resp:
+            async with session.post(url, data=data, headers=headers) as resp:
                 result = await resp.text()
+                print(f"Upload response status: {resp.status}")
+                print(f"Upload response body: {result[:500]}")
+
                 if resp.status == 200:
                     try:
                         result_json = json.loads(result)
@@ -107,11 +117,10 @@ class RobloxAudioFetcher:
                         else:
                             raise Exception("Upload succeeded but no asset ID returned.")
                     except json.JSONDecodeError:
-                        if 'assetId' in result:
-                            import re
-                            match = re.search(r'assetId["\']?\s*[:=]\s*["\']?(\d+)', result)
-                            if match:
-                                return int(match.group(1))
+                        import re
+                        match = re.search(r'assetId["\']?\s*[:=]\s*["\']?(\d+)', result)
+                        if match:
+                            return int(match.group(1))
                         raise Exception("Upload succeeded but could not parse response.")
                 else:
                     try:
