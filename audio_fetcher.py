@@ -39,21 +39,30 @@ class RobloxAudioFetcher:
                 audio_data = await resp.read()
                 print(f"📡 Downloaded {len(audio_data)} bytes", flush=True)
 
-                # If it's JSON, it's likely an error or a redirect URL
+                # If it's JSON, check for a location (CDN redirect)
                 if 'application/json' in content_type:
                     try:
                         data = json.loads(audio_data)
-                        # Roblox error format: {"errors":[{"message":"..."}]}
+                        # Roblox error format
                         if 'errors' in data and data['errors']:
                             error_msg = data['errors'][0].get('message', 'Unknown error')
                             raise Exception(f"Roblox API error: {error_msg}")
-                        # Sometimes Roblox returns a URL for the asset (redirect)
-                        if 'url' in data:
-                            raise Exception(f"Asset requires a redirect – not directly downloadable via this endpoint. URL: {data['url']}")
-                        # Fallback: show full JSON
+                        # Success: we get a location URL
+                        if 'location' in data:
+                            location_url = data['location']
+                            print(f"📡 Following CDN redirect to: {location_url}", flush=True)
+                            # Fetch the actual audio from the CDN
+                            async with session.get(location_url, headers=headers, timeout=timeout) as cdn_resp:
+                                print(f"📡 CDN response status: {cdn_resp.status}", flush=True)
+                                if cdn_resp.status != 200:
+                                    raise Exception(f"CDN returned HTTP {cdn_resp.status}")
+                                audio_data = await cdn_resp.read()
+                                print(f"📡 Downloaded {len(audio_data)} bytes from CDN", flush=True)
+                                return audio_data
+                        # Unexpected JSON
                         raise Exception(f"Roblox returned unexpected JSON: {json.dumps(data)[:200]}")
                     except json.JSONDecodeError:
-                        # Not JSON, maybe it's binary audio – proceed
+                        # Not JSON, treat as binary audio
                         pass
 
                 # If it's too small, it's probably not audio
@@ -127,7 +136,6 @@ class RobloxAudioFetcher:
             }
 
         except CouldntDecodeError as e:
-            # Provide a user-friendly error if ffmpeg fails
             raise Exception(f"Failed to decode audio. The downloaded file may not be a valid MP3. "
                             f"Check that the asset ID is correct and that the asset is playable audio. "
                             f"(Raw error: {str(e)[:200]})")
@@ -139,7 +147,6 @@ class RobloxAudioFetcher:
         if self.session:
             await self.session.close()
 
-    # Async context manager support
     async def __aenter__(self):
         return self
 
