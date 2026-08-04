@@ -74,6 +74,7 @@ class RobloxAudioFetcher:
 
     async def _get_csrf_token(self, cookie: str):
         session = await self._get_session()
+        # Try POST first – triggers 403 but returns token in headers
         url = "https://assetdelivery.roblox.com/v1/assetId/upload?assetId=0"
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -81,28 +82,28 @@ class RobloxAudioFetcher:
             "Accept": "application/json"
         }
         try:
-            # This will return a 403, but the token is in the headers
             async with session.post(url, headers=headers) as resp:
                 token = resp.headers.get('X-CSRF-TOKEN')
                 if token:
                     return token
-                # Fallback: try to get from a GET request (some endpoints return it)
-                async with session.get("https://assetdelivery.roblox.com/v1/asset/", headers=headers) as get_resp:
-                    token = get_resp.headers.get('X-CSRF-TOKEN')
+        except:
+            pass
+
+        # Fallback: GET request to asset endpoint
+        try:
+            async with session.get("https://assetdelivery.roblox.com/v1/asset/", headers=headers) as resp:
+                token = resp.headers.get('X-CSRF-TOKEN')
+                if token:
                     return token
         except:
-            return None
+            pass
+        return None
 
     async def upload_audio(self, file_bytes: bytes, filename: str, name: str = None, description: str = None, group_id: int = None, cookie: str = None):
         if not cookie:
             raise Exception(".ROBLOSECURITY cookie is required for uploads.")
 
         session = await self._get_session()
-
-        # Test the cookie with a simple asset details request (asset 1)
-        test = await self.fetch_asset_details(1, cookie)
-        if test is None:
-            raise Exception("The provided .ROBLOSECURITY cookie appears to be invalid or expired.")
 
         csrf_token = await self._get_csrf_token(cookie)
         if not csrf_token:
