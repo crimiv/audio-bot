@@ -31,22 +31,22 @@ def extract_asset_id(input_str: str) -> int:
 
 @bot.event
 async def on_ready():
-    print(f"✅ Logged in as {bot.user}")
+    print(f"✅ Logged in as {bot.user}", flush=True)
     try:
         synced = await bot.tree.sync()
-        print(f"📋 Synced {len(synced)} command(s)")
+        print(f"📋 Synced {len(synced)} command(s)", flush=True)
     except Exception as e:
-        print(f"❌ Failed to sync commands: {e}")
+        print(f"❌ Failed to sync commands: {e}", flush=True)
 
 @bot.tree.command(name="audioinfo", description="Get detailed info about a Roblox audio asset")
 @app_commands.describe(asset="Roblox audio asset ID or URL")
 async def audioinfo(interaction: discord.Interaction, asset: str):
     await interaction.response.defer()
-    print(f"🔄 /audioinfo called for asset: {asset}")
+    print(f"🔄 /audioinfo called for asset: {asset}", flush=True)
 
     try:
         asset_id = extract_asset_id(asset)
-        print(f"🔍 Extracted asset ID: {asset_id}")
+        print(f"🔍 Extracted asset ID: {asset_id}", flush=True)
     except ValueError as e:
         await interaction.followup.send(f"❌ {str(e)}")
         return
@@ -57,11 +57,11 @@ async def audioinfo(interaction: discord.Interaction, asset: str):
             await interaction.followup.send("❌ Failed to download audio (file too small or invalid)")
             return
 
-        print("📊 Analyzing audio...")
+        print("📊 Analyzing audio...", flush=True)
         info = await fetcher.analyze_audio(audio_data)
-        print("📊 Analysis complete.")
+        print("📊 Analysis complete.", flush=True)
 
-        print("🎨 Generating waveform image...")
+        print("🎨 Generating waveform image...", flush=True)
         waveform_img = generate_waveform_image(
             info["waveform"],
             width=600,
@@ -71,7 +71,7 @@ async def audioinfo(interaction: discord.Interaction, asset: str):
         )
         img_bytes = waveform_to_bytes(waveform_img)
         file = discord.File(io.BytesIO(img_bytes), filename="waveform.png")
-        print("🎨 Waveform generated.")
+        print("🎨 Waveform generated.", flush=True)
 
         embed = discord.Embed(
             title="🎵 Roblox Audio Info",
@@ -89,14 +89,14 @@ async def audioinfo(interaction: discord.Interaction, asset: str):
         embed.set_footer(text="Data fetched from Roblox • Waveform visualization")
 
         await interaction.followup.send(embed=embed, file=file)
-        print("✅ Command completed successfully.")
+        print("✅ Command completed successfully.", flush=True)
 
     except Exception as e:
-        print(f"❌ Error in command: {e}")
+        print(f"❌ Error in command: {e}", flush=True)
         try:
             await interaction.followup.send(f"❌ Error: {str(e)}")
         except Exception as followup_err:
-            print(f"⚠️ Could not send error message: {followup_err}")
+            print(f"⚠️ Could not send error message: {followup_err}", flush=True)
 
 async def main():
     async with fetcher:
