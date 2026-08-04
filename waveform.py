@@ -1,6 +1,5 @@
 from PIL import Image, ImageDraw
 import io
-import math
 
 def generate_waveform_image(waveform_data, width=600, height=150, color="#00FF88", bg_color="#1a1a2e"):
     try:
@@ -17,25 +16,40 @@ def generate_waveform_image(waveform_data, width=600, height=150, color="#00FF88
         draw = ImageDraw.Draw(img)
 
         mid_y = height // 2
-        num_bars = len(normalized)
-        bar_width = max(1, width // num_bars)
+        num_points = len(normalized)
+        step = max(1, num_points // width)
 
+        if num_points > width:
+            resampled = []
+            for i in range(0, num_points - step + 1, step):
+                chunk = normalized[i:i+step]
+                resampled.append(max(chunk) if chunk else 0)
+            if len(resampled) < width:
+                resampled.extend([0] * (width - len(resampled)))
+            normalized = resampled[:width]
+        elif num_points < width:
+            normalized = normalized + [0] * (width - num_points)
+
+        normalized = normalized[:width]
+        while len(normalized) < width:
+            normalized.append(0)
+
+        points = []
         for i, val in enumerate(normalized):
-            x = i * bar_width
-            val = max(-1, min(1, val))
-            bar_height = int(abs(val) * (height // 2 - 4))
+            x = i
+            y = int(mid_y - val * (height // 2 - 6))
+            points.append((x, y))
 
-            if val >= 0:
-                y0 = mid_y - bar_height
-                y1 = mid_y
-            else:
-                y0 = mid_y
-                y1 = mid_y + bar_height
+        if points:
+            points.append((width - 1, mid_y + (height // 2 - 6)))
+            points.append((0, mid_y + (height // 2 - 6)))
+            points.append((0, points[0][1]))
 
-            if y1 - y0 < 1:
-                y1 = y0 + 1
+            draw.polygon(points, fill=color)
 
-            draw.rectangle([x, y0, x + bar_width - 1, y1], fill=color)
+            outline_points = points[:len(normalized)]
+            if len(outline_points) > 1:
+                draw.line(outline_points, fill=color, width=2)
 
         return img
 
