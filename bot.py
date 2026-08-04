@@ -60,9 +60,9 @@ async def audioinfo(interaction: discord.Interaction, asset: str):
             print("📊 Analyzing audio...", flush=True)
             info = await fetcher.analyze_audio(audio_data)
             print("📊 Analysis complete.", flush=True)
-            return info, audio_data
+            return info
 
-        info, audio_data = await asyncio.wait_for(process(), timeout=25.0)
+        info = await asyncio.wait_for(process(), timeout=25.0)
 
         print("🎨 Generating waveform image...", flush=True)
         waveform_img = generate_waveform_image(
@@ -107,7 +107,6 @@ async def audioinfo(interaction: discord.Interaction, asset: str):
         except Exception as followup_err:
             print(f"⚠️ Could not send error message: {followup_err}", flush=True)
 
-# Simple ping command
 @bot.tree.command(name="ping", description="Check if the bot is alive")
 async def ping(interaction: discord.Interaction):
     await interaction.response.send_message("🏓 Pong!")

@@ -10,7 +10,7 @@ from pydub.exceptions import CouldntDecodeError
 from pydub.utils import mediainfo
 from config import ROBLOX_SECURITY
 
-MAX_AUDIO_SIZE = 10 * 1024 * 1024  # 10 MB
+MAX_AUDIO_SIZE = 8 * 1024 * 1024  # 8 MB limit (conservative for Railway)
 
 class RobloxAudioFetcher:
     def __init__(self):
