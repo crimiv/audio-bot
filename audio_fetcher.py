@@ -96,17 +96,24 @@ class RobloxAudioFetcher:
 
     async def _get_csrf_token(self, cookie: str):
         session = await self._get_session()
-        url = "https://www.roblox.com/"
+        endpoints = [
+            "https://www.roblox.com/mobileapi/userinfo",
+            "https://www.roblox.com/",
+            "https://assetdelivery.roblox.com/v1/asset/"
+        ]
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "Cookie": f'.ROBLOSECURITY={cookie}'
         }
-        try:
-            async with session.get(url, headers=headers) as resp:
-                token = resp.headers.get('X-CSRF-TOKEN')
-                return token
-        except:
-            return None
+        for url in endpoints:
+            try:
+                async with session.get(url, headers=headers) as resp:
+                    token = resp.headers.get('X-CSRF-TOKEN')
+                    if token:
+                        return token
+            except:
+                continue
+        return None
 
     async def upload_audio(self, file_bytes: bytes, filename: str, name: str = None, description: str = None, group_id: int = None, cookie: str = None):
         if not cookie:
@@ -120,7 +127,7 @@ class RobloxAudioFetcher:
 
         csrf_token = await self._get_csrf_token(cookie)
         if not csrf_token:
-            raise Exception("Could not retrieve CSRF token after valid cookie – unexpected.")
+            raise Exception("Could not retrieve CSRF token – cookie may be invalid or expired. Please refresh your cookie.")
 
         if not name:
             name = os.path.splitext(filename)[0]
@@ -163,6 +170,23 @@ class RobloxAudioFetcher:
                         if match:
                             return int(match.group(1))
                         raise Exception("Upload succeeded but could not parse response.")
+                elif resp.status == 403:
+                    new_token = resp.headers.get('X-CSRF-TOKEN')
+                    if new_token:
+                        headers['X-CSRF-TOKEN'] = new_token
+                        async with session.post(url, data=data, headers=headers) as retry_resp:
+                            retry_result = await retry_resp.text()
+                            if retry_resp.status == 200:
+                                try:
+                                    retry_json = json.loads(retry_result)
+                                    asset_id = retry_json.get('assetId')
+                                    if asset_id:
+                                        return asset_id
+                                except:
+                                    match = re.search(r'assetId["\']?\s*[:=]\s*["\']?(\d+)', retry_result)
+                                    if match:
+                                        return int(match.group(1))
+                    raise Exception("Upload failed: CSRF token invalid. Please refresh your cookie.")
                 else:
                     try:
                         error_data = json.loads(result)
