@@ -15,20 +15,13 @@ from config import DISCORD_TOKEN, MAIN_COOKIE
 from audio_fetcher import RobloxAudioFetcher
 from waveform import generate_waveform_image, waveform_to_bytes
 
-# -------- TOKEN DEBUG ----------
-print(f"TOKEN loaded: {'*' * len(DISCORD_TOKEN) if DISCORD_TOKEN else 'None'}")
-if DISCORD_TOKEN:
-    print(f"TOKEN first 6 chars: {DISCORD_TOKEN[:6]}")
-else:
-    print("ERROR: DISCORD_TOKEN is not set or empty.")
-    exit(1)
-# -------------------------------
-
 TRACKING_FILE = "tracking.json"
 USER_COOKIES_FILE = "user_cookies.json"
 
+if not DISCORD_TOKEN:
+    raise SystemExit("DISCORD_TOKEN not set.")
+
 intents = discord.Intents.default()
-intents.message_content = True
 
 bot = commands.Bot(command_prefix=None, intents=intents)
 fetcher = RobloxAudioFetcher()

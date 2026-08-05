@@ -74,37 +74,44 @@ class RobloxAudioFetcher:
 
     async def _validate_cookie(self, cookie: str):
         session = await self._get_session()
-        url = "https://www.roblox.com/"
+        endpoints = [
+            "https://www.roblox.com/",
+            "https://assetdelivery.roblox.com/v1/asset/"
+        ]
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "Cookie": f'.ROBLOSECURITY={cookie}'
         }
-        try:
-            async with session.get(url, headers=headers) as resp:
-                if resp.status == 200:
-                    token = resp.headers.get('X-CSRF-TOKEN')
-                    if token:
-                        return True, "Valid"
-                    else:
-                        return False, "Cookie valid but no CSRF token received – try refreshing the cookie."
-                else:
-                    return False, f"Cookie invalid or expired (status {resp.status}) – log out and back in, then copy a fresh cookie."
-        except Exception as e:
-            return False, f"Request error: {str(e)}"
+        for url in endpoints:
+            try:
+                async with session.get(url, headers=headers) as resp:
+                    if resp.status == 200:
+                        token = resp.headers.get('X-CSRF-TOKEN')
+                        if token:
+                            return True, "Valid"
+            except:
+                continue
+        return False, "Cookie valid but no CSRF token received – try refreshing the cookie."
 
     async def _get_csrf_token(self, cookie: str):
         session = await self._get_session()
-        url = "https://www.roblox.com/"
+        endpoints = [
+            "https://www.roblox.com/",
+            "https://assetdelivery.roblox.com/v1/asset/"
+        ]
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "Cookie": f'.ROBLOSECURITY={cookie}'
         }
-        try:
-            async with session.get(url, headers=headers) as resp:
-                token = resp.headers.get('X-CSRF-TOKEN')
-                return token
-        except:
-            return None
+        for url in endpoints:
+            try:
+                async with session.get(url, headers=headers) as resp:
+                    token = resp.headers.get('X-CSRF-TOKEN')
+                    if token:
+                        return token
+            except:
+                continue
+        return None
 
     async def upload_audio(self, file_bytes: bytes, filename: str, name: str = None, description: str = None, group_id: int = None, cookie: str = None):
         if not cookie:
