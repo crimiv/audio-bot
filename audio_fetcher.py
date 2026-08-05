@@ -74,33 +74,46 @@ class RobloxAudioFetcher:
 
     async def _validate_cookie(self, cookie: str):
         session = await self._get_session()
-        endpoints = [
-            "https://www.roblox.com/mobileapi/userinfo",
-            "https://www.roblox.com/"
-        ]
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "Cookie": f'.ROBLOSECURITY={cookie}'
         }
-        for url in endpoints:
-            try:
-                async with session.get(url, headers=headers, allow_redirects=False) as resp:
-                    if resp.status == 200:
-                        if 'mobileapi' in url:
-                            try:
-                                data = await resp.json()
-                                if data.get("UserName"):
-                                    return True, "Valid"
-                            except:
-                                pass
-                        else:
-                            return True, "Valid"
-                    elif resp.status in (301, 302, 303, 307):
-                        continue
-                    else:
-                        continue
-            except:
-                continue
+
+        # First try: homepage + check for X-CSRF-TOKEN
+        try:
+            async with session.get("https://www.roblox.com/", headers=headers) as resp:
+                if resp.status == 200:
+                    token = resp.headers.get('X-CSRF-TOKEN')
+                    if token:
+                        return True, "Valid"
+                elif resp.status in (301, 302, 303, 307):
+                    pass
+        except:
+            pass
+
+        # Second try: mobile API (returns user info)
+        try:
+            async with session.get("https://www.roblox.com/mobileapi/userinfo", headers=headers) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    if data.get("UserName"):
+                        return True, "Valid"
+        except:
+            pass
+
+        # Third try: fetch home page and check for redirect or login content
+        try:
+            async with session.get("https://www.roblox.com/home", headers=headers, allow_redirects=False) as resp:
+                if resp.status == 200:
+                    # check for presence of login button or user avatar
+                    text = await resp.text()
+                    if "Log In" not in text and "Sign Up" not in text:
+                        return True, "Valid"
+                elif resp.status in (301, 302, 303, 307):
+                    pass
+        except:
+            pass
+
         return False, "Cookie invalid or expired – log out and back in, then copy a fresh cookie."
 
     async def _get_csrf_token(self, cookie: str):
