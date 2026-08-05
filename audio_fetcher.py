@@ -74,21 +74,34 @@ class RobloxAudioFetcher:
 
     async def _validate_cookie(self, cookie: str):
         session = await self._get_session()
-        url = "https://www.roblox.com/"
+        endpoints = [
+            "https://www.roblox.com/mobileapi/userinfo",
+            "https://www.roblox.com/"
+        ]
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "Cookie": f'.ROBLOSECURITY={cookie}'
         }
-        try:
-            async with session.get(url, headers=headers, allow_redirects=False) as resp:
-                if resp.status == 200:
-                    return True, "Valid"
-                elif resp.status in (301, 302, 303, 307):
-                    return False, "Cookie invalid or expired – log out and back in, then copy a fresh cookie."
-                else:
-                    return False, f"Unexpected status {resp.status} – cookie may be invalid."
-        except Exception as e:
-            return False, f"Request error: {str(e)}"
+        for url in endpoints:
+            try:
+                async with session.get(url, headers=headers, allow_redirects=False) as resp:
+                    if resp.status == 200:
+                        if 'mobileapi' in url:
+                            try:
+                                data = await resp.json()
+                                if data.get("UserName"):
+                                    return True, "Valid"
+                            except:
+                                pass
+                        else:
+                            return True, "Valid"
+                    elif resp.status in (301, 302, 303, 307):
+                        continue
+                    else:
+                        continue
+            except:
+                continue
+        return False, "Cookie invalid or expired – log out and back in, then copy a fresh cookie."
 
     async def _get_csrf_token(self, cookie: str):
         session = await self._get_session()
@@ -108,7 +121,6 @@ class RobloxAudioFetcher:
                         return token
             except:
                 continue
-        # Fallback: POST to upload endpoint to get token
         try:
             async with session.post("https://assetdelivery.roblox.com/v1/assetId/upload?assetId=0", headers=headers) as resp:
                 token = resp.headers.get('X-CSRF-TOKEN')
