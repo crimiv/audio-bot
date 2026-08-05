@@ -23,7 +23,7 @@ if not DISCORD_TOKEN:
 
 intents = discord.Intents.default()
 
-bot = commands.Bot(command_prefix=None, intents=intents)
+bot = commands.Bot(command_prefix="!", intents=intents)
 fetcher = RobloxAudioFetcher()
 
 def load_tracking():
@@ -149,8 +149,18 @@ async def help_slash(interaction: discord.Interaction):
         inline=False
     )
     embed.add_field(
-        name="/cookie <set|remove|show> [cookie]",
-        value="Set, remove, or show your personal .ROBLOSECURITY cookie for uploads.",
+        name="/cookieset <cookie>",
+        value="Store your personal .ROBLOSECURITY cookie for uploads.",
+        inline=False
+    )
+    embed.add_field(
+        name="/cookieremove",
+        value="Remove your stored cookie.",
+        inline=False
+    )
+    embed.add_field(
+        name="/cookieshow",
+        value="Check if you have a cookie stored.",
         inline=False
     )
     embed.add_field(
@@ -168,7 +178,7 @@ async def help_slash(interaction: discord.Interaction):
         value=(
             "`/audioinfo 1845655576`\n"
             "`/track add 123456`\n"
-            "`/cookie set _|WARNING...`\n"
+            "`/cookieset _|WARNING...`\n"
             "`/upload` (with attachment)"
         ),
         inline=False
@@ -176,44 +186,50 @@ async def help_slash(interaction: discord.Interaction):
     embed.set_footer(text="Use /help anytime.")
     await interaction.response.send_message(embed=embed)
 
-@bot.tree.command(name="cookie", description="Manage your personal Roblox cookie for uploads")
-@app_commands.describe(action="set, remove, or show", cookie="The .ROBLOSECURITY cookie value (for set action)")
-async def cookie(interaction: discord.Interaction, action: str, cookie: str = None):
+@bot.tree.command(name="cookieset", description="Store your personal .ROBLOSECURITY cookie for uploads")
+@app_commands.describe(cookie="The .ROBLOSECURITY cookie value")
+async def cookieset(interaction: discord.Interaction, cookie: str):
     await interaction.response.defer()
     user_id = str(interaction.user.id)
     cookies = load_user_cookies()
 
-    if action.lower() == "set":
-        if not cookie:
-            await interaction.followup.send("Please provide a cookie value.")
-            return
-        if not cookie.startswith("_|WARNING"):
-            await interaction.followup.send("The cookie doesn't look like a valid .ROBLOSECURITY cookie.")
-            return
-        valid, msg = await fetcher._validate_cookie(cookie)
-        if not valid:
-            await interaction.followup.send(f"Cookie validation failed: {msg}")
-            return
-        cookies[user_id] = cookie
-        save_user_cookies(cookies)
-        await interaction.followup.send("Your cookie has been stored successfully! You can now use /upload with your own cookie.")
+    if not cookie:
+        await interaction.followup.send("Please provide a cookie value.")
+        return
+    if not cookie.startswith("_|WARNING"):
+        await interaction.followup.send("The cookie doesn't look like a valid .ROBLOSECURITY cookie.")
+        return
 
-    elif action.lower() == "remove":
-        if user_id not in cookies:
-            await interaction.followup.send("You don't have a cookie stored.")
-            return
-        del cookies[user_id]
-        save_user_cookies(cookies)
-        await interaction.followup.send("Your cookie has been removed.")
+    valid, msg = await fetcher._validate_cookie(cookie)
+    if not valid:
+        await interaction.followup.send(f"Cookie validation failed: {msg}")
+        return
 
-    elif action.lower() == "show":
-        if user_id in cookies:
-            await interaction.followup.send("You have a cookie stored for uploads.")
-        else:
-            await interaction.followup.send("You don't have a cookie stored. Use `/cookie set` to add one.")
+    cookies[user_id] = cookie
+    save_user_cookies(cookies)
+    await interaction.followup.send("Your cookie has been stored successfully! You can now use /upload with your own cookie.")
 
+@bot.tree.command(name="cookieremove", description="Remove your stored cookie")
+async def cookieremove(interaction: discord.Interaction):
+    await interaction.response.defer()
+    user_id = str(interaction.user.id)
+    cookies = load_user_cookies()
+    if user_id not in cookies:
+        await interaction.followup.send("You don't have a cookie stored.")
+        return
+    del cookies[user_id]
+    save_user_cookies(cookies)
+    await interaction.followup.send("Your cookie has been removed.")
+
+@bot.tree.command(name="cookieshow", description="Check if you have a cookie stored")
+async def cookieshow(interaction: discord.Interaction):
+    await interaction.response.defer()
+    user_id = str(interaction.user.id)
+    cookies = load_user_cookies()
+    if user_id in cookies:
+        await interaction.followup.send("You have a cookie stored for uploads.")
     else:
-        await interaction.followup.send("Invalid action. Use `set`, `remove`, or `show`.")
+        await interaction.followup.send("You don't have a cookie stored. Use `/cookieset` to add one.")
 
 @bot.tree.command(name="checkcookie", description="Check if your stored upload cookie is valid")
 async def checkcookie(interaction: discord.Interaction):
@@ -223,7 +239,7 @@ async def checkcookie(interaction: discord.Interaction):
     cookie = cookies.get(user_id)
 
     if not cookie:
-        await interaction.followup.send("No personal cookie found. Use `/cookie set` to add one.")
+        await interaction.followup.send("No personal cookie found. Use `/cookieset` to add one.")
         return
 
     valid, msg = await fetcher._validate_cookie(cookie)
@@ -297,12 +313,12 @@ async def upload(interaction: discord.Interaction, file: discord.Attachment):
     cookie = cookies.get(user_id)
 
     if not cookie:
-        await interaction.followup.send("No upload cookie found. Use `/cookie set` to add your .ROBLOSECURITY.")
+        await interaction.followup.send("No upload cookie found. Use `/cookieset` to add your .ROBLOSECURITY.")
         return
 
     valid, msg = await fetcher._validate_cookie(cookie)
     if not valid:
-        await interaction.followup.send(f"Upload cookie invalid: {msg}\nUse `/cookie set` to update your cookie.")
+        await interaction.followup.send(f"Upload cookie invalid: {msg}\nUse `/cookieset` to update your cookie.")
         return
 
     if not file.filename.lower().endswith(('.mp3', '.wav', '.ogg', '.flac', '.m4a')):
