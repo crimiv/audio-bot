@@ -6,7 +6,6 @@ import io
 import re
 import tempfile
 import os
-import json
 from datetime import datetime
 from pydub import AudioSegment
 from pydub.exceptions import CouldntDecodeError
@@ -14,37 +13,26 @@ from pydub.exceptions import CouldntDecodeError
 from config import DISCORD_TOKEN, MAIN_COOKIE
 from audio_fetcher import RobloxAudioFetcher
 from waveform import generate_waveform_image, waveform_to_bytes
-
-TRACKING_FILE = "tracking.json"
-USER_COOKIES_FILE = "user_cookies.json"
+from database import (
+    init_db,
+    get_user_cookie,
+    set_user_cookie,
+    delete_user_cookie,
+    get_all_tracked_assets,
+    add_tracked_asset,
+    remove_tracked_asset,
+    update_tracked_asset_moderated,
+)
 
 if not DISCORD_TOKEN:
     raise SystemExit("DISCORD_TOKEN not set.")
 
 intents = discord.Intents.default()
-
-bot = commands.Bot(command_prefix="!", intents=intents)
+bot = commands.Bot(command_prefix=None, intents=intents)
 fetcher = RobloxAudioFetcher()
 
-def load_tracking():
-    if os.path.exists(TRACKING_FILE):
-        with open(TRACKING_FILE, 'r') as f:
-            return json.load(f)
-    return {"assets": {}}
-
-def save_tracking(data):
-    with open(TRACKING_FILE, 'w') as f:
-        json.dump(data, f, indent=2)
-
-def load_user_cookies():
-    if os.path.exists(USER_COOKIES_FILE):
-        with open(USER_COOKIES_FILE, 'r') as f:
-            return json.load(f)
-    return {}
-
-def save_user_cookies(data):
-    with open(USER_COOKIES_FILE, 'w') as f:
-        json.dump(data, f, indent=2)
+# Initialize database
+init_db()
 
 def extract_asset_id(input_str: str) -> int:
     if input_str.isdigit():
@@ -112,22 +100,20 @@ async def check_moderation_status():
     await bot.wait_until_ready()
     while not bot.is_closed():
         try:
-            tracking_data = load_tracking()
-            assets = tracking_data.get("assets", {})
-            for asset_id_str, user_id in assets.items():
-                asset_id = int(asset_id_str)
+            assets = get_all_tracked_assets()
+            for asset in assets:
+                asset_id = int(asset["asset_id"])
                 status = await fetcher.fetch_asset_moderation_status(asset_id, MAIN_COOKIE)
-                if status.get("moderated", False):
-                    user = await bot.fetch_user(user_id)
+                if status.get("moderated", False) and not asset["moderated"]:
+                    user = await bot.fetch_user(int(asset["user_id"]))
                     if user:
                         try:
                             await user.send(f"Asset {asset_id} has been moderated or deleted.")
                         except:
                             pass
-                    tracking_data["assets"][asset_id_str] = {"moderated": True, "user_id": user_id}
-                else:
-                    tracking_data["assets"][asset_id_str] = {"moderated": False, "user_id": user_id}
-            save_tracking(tracking_data)
+                    update_tracked_asset_moderated(asset["asset_id"], 1)
+                elif not status.get("moderated", False):
+                    update_tracked_asset_moderated(asset["asset_id"], 0)
         except Exception:
             pass
         await asyncio.sleep(86400)
@@ -191,7 +177,6 @@ async def help_slash(interaction: discord.Interaction):
 async def cookieset(interaction: discord.Interaction, cookie: str):
     await interaction.response.defer()
     user_id = str(interaction.user.id)
-    cookies = load_user_cookies()
 
     if not cookie:
         await interaction.followup.send("Please provide a cookie value.")
@@ -205,28 +190,26 @@ async def cookieset(interaction: discord.Interaction, cookie: str):
         await interaction.followup.send(f"Cookie validation failed: {msg}")
         return
 
-    cookies[user_id] = cookie
-    save_user_cookies(cookies)
+    set_user_cookie(user_id, cookie)
     await interaction.followup.send("Your cookie has been stored successfully! You can now use /upload with your own cookie.")
 
 @bot.tree.command(name="cookieremove", description="Remove your stored cookie")
 async def cookieremove(interaction: discord.Interaction):
     await interaction.response.defer()
     user_id = str(interaction.user.id)
-    cookies = load_user_cookies()
-    if user_id not in cookies:
+    cookie = get_user_cookie(user_id)
+    if not cookie:
         await interaction.followup.send("You don't have a cookie stored.")
         return
-    del cookies[user_id]
-    save_user_cookies(cookies)
+    delete_user_cookie(user_id)
     await interaction.followup.send("Your cookie has been removed.")
 
 @bot.tree.command(name="cookieshow", description="Check if you have a cookie stored")
 async def cookieshow(interaction: discord.Interaction):
     await interaction.response.defer()
     user_id = str(interaction.user.id)
-    cookies = load_user_cookies()
-    if user_id in cookies:
+    cookie = get_user_cookie(user_id)
+    if cookie:
         await interaction.followup.send("You have a cookie stored for uploads.")
     else:
         await interaction.followup.send("You don't have a cookie stored. Use `/cookieset` to add one.")
@@ -235,9 +218,7 @@ async def cookieshow(interaction: discord.Interaction):
 async def checkcookie(interaction: discord.Interaction):
     await interaction.response.defer()
     user_id = str(interaction.user.id)
-    cookies = load_user_cookies()
-    cookie = cookies.get(user_id)
-
+    cookie = get_user_cookie(user_id)
     if not cookie:
         await interaction.followup.send("No personal cookie found. Use `/cookieset` to add one.")
         return
@@ -252,8 +233,7 @@ async def checkcookie(interaction: discord.Interaction):
 @app_commands.describe(action="add, remove, or list", asset="Asset ID or URL (for add/remove)")
 async def track(interaction: discord.Interaction, action: str, asset: str = None):
     await interaction.response.defer()
-    tracking_data = load_tracking()
-    assets = tracking_data.get("assets", {})
+    user_id = str(interaction.user.id)
 
     if action.lower() == "add":
         if not asset:
@@ -265,13 +245,7 @@ async def track(interaction: discord.Interaction, action: str, asset: str = None
             await interaction.followup.send(f"Error: {str(e)}")
             return
 
-        if str(asset_id) in assets:
-            await interaction.followup.send(f"Asset {asset_id} is already being tracked.")
-            return
-
-        assets[str(asset_id)] = {"user_id": interaction.user.id, "moderated": False}
-        tracking_data["assets"] = assets
-        save_tracking(tracking_data)
+        add_tracked_asset(str(asset_id), user_id)
         await interaction.followup.send(f"Now tracking asset {asset_id}. You will be notified if it gets moderated.")
 
     elif action.lower() == "remove":
@@ -284,20 +258,15 @@ async def track(interaction: discord.Interaction, action: str, asset: str = None
             await interaction.followup.send(f"Error: {str(e)}")
             return
 
-        if str(asset_id) not in assets:
-            await interaction.followup.send(f"Asset {asset_id} is not being tracked.")
-            return
-
-        del assets[str(asset_id)]
-        tracking_data["assets"] = assets
-        save_tracking(tracking_data)
+        remove_tracked_asset(str(asset_id))
         await interaction.followup.send(f"Removed asset {asset_id} from tracking.")
 
     elif action.lower() == "list":
+        assets = get_all_tracked_assets()
         if not assets:
             await interaction.followup.send("You are not tracking any assets.")
             return
-        asset_list = "\n".join([f"- {aid}" for aid in assets.keys()])
+        asset_list = "\n".join([f"- {a['asset_id']}" for a in assets])
         await interaction.followup.send(f"Tracked assets:\n{asset_list}")
 
     else:
@@ -309,8 +278,7 @@ async def upload(interaction: discord.Interaction, file: discord.Attachment):
     await interaction.response.defer()
 
     user_id = str(interaction.user.id)
-    cookies = load_user_cookies()
-    cookie = cookies.get(user_id)
+    cookie = get_user_cookie(user_id)
 
     if not cookie:
         await interaction.followup.send("No upload cookie found. Use `/cookieset` to add your .ROBLOSECURITY.")
@@ -351,11 +319,7 @@ async def upload(interaction: discord.Interaction, file: discord.Attachment):
             cookie=cookie
         )
 
-        tracking_data = load_tracking()
-        assets = tracking_data.get("assets", {})
-        assets[str(asset_id)] = {"user_id": interaction.user.id, "moderated": False}
-        tracking_data["assets"] = assets
-        save_tracking(tracking_data)
+        add_tracked_asset(str(asset_id), user_id)
 
         await interaction.followup.send(f"Upload successful! Asset ID: {asset_id}\nYou will be notified if it gets moderated.")
 
