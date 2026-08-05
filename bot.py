@@ -15,11 +15,12 @@ from config import DISCORD_TOKEN, MAIN_COOKIE
 from audio_fetcher import RobloxAudioFetcher
 from waveform import generate_waveform_image, waveform_to_bytes
 
+if not DISCORD_TOKEN:
+    print("ERROR: DISCORD_TOKEN is not set or empty. Please set the environment variable.")
+    exit(1)
+
 TRACKING_FILE = "tracking.json"
 USER_COOKIES_FILE = "user_cookies.json"
-
-if not DISCORD_TOKEN:
-    raise SystemExit("DISCORD_TOKEN not set.")
 
 intents = discord.Intents.default()
 
