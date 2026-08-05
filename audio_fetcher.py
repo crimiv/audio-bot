@@ -74,24 +74,21 @@ class RobloxAudioFetcher:
 
     async def _validate_cookie(self, cookie: str):
         session = await self._get_session()
-        endpoints = [
-            "https://www.roblox.com/",
-            "https://assetdelivery.roblox.com/v1/asset/"
-        ]
+        url = "https://www.roblox.com/"
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "Cookie": f'.ROBLOSECURITY={cookie}'
         }
-        for url in endpoints:
-            try:
-                async with session.get(url, headers=headers) as resp:
-                    if resp.status == 200:
-                        token = resp.headers.get('X-CSRF-TOKEN')
-                        if token:
-                            return True, "Valid"
-            except:
-                continue
-        return False, "Cookie valid but no CSRF token received – try refreshing the cookie."
+        try:
+            async with session.get(url, headers=headers, allow_redirects=False) as resp:
+                if resp.status == 200:
+                    return True, "Valid"
+                elif resp.status in (301, 302, 303, 307):
+                    return False, "Cookie invalid or expired – log out and back in, then copy a fresh cookie."
+                else:
+                    return False, f"Unexpected status {resp.status} – cookie may be invalid."
+        except Exception as e:
+            return False, f"Request error: {str(e)}"
 
     async def _get_csrf_token(self, cookie: str):
         session = await self._get_session()
@@ -111,6 +108,14 @@ class RobloxAudioFetcher:
                         return token
             except:
                 continue
+        # Fallback: POST to upload endpoint to get token
+        try:
+            async with session.post("https://assetdelivery.roblox.com/v1/assetId/upload?assetId=0", headers=headers) as resp:
+                token = resp.headers.get('X-CSRF-TOKEN')
+                if token:
+                    return token
+        except:
+            pass
         return None
 
     async def upload_audio(self, file_bytes: bytes, filename: str, name: str = None, description: str = None, group_id: int = None, cookie: str = None):
