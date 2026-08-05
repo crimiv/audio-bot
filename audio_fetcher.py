@@ -74,19 +74,23 @@ class RobloxAudioFetcher:
 
     async def _validate_cookie(self, cookie: str):
         session = await self._get_session()
-        url = "https://www.roblox.com/"
+        url = "https://www.roblox.com/mobileapi/userinfo"
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "Cookie": f'.ROBLOSECURITY={cookie}'
         }
         try:
-            async with session.get(url, headers=headers, allow_redirects=False) as resp:
-                if resp.status in (301, 302, 303, 307):
-                    return False, "Cookie redirected to login – invalid or expired"
-                elif resp.status == 200:
-                    return True, "Valid"
+            async with session.get(url, headers=headers) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    if data.get("UserName"):
+                        return True, "Valid"
+                    else:
+                        return False, "Cookie invalid (no user data)"
+                elif resp.status in (401, 403):
+                    return False, "Cookie invalid or expired – please log out and log back in to get a fresh one."
                 else:
-                    return False, f"Unexpected status {resp.status}"
+                    return False, f"Unexpected status {resp.status} – cookie may be invalid."
         except Exception as e:
             return False, f"Request error: {str(e)}"
 
