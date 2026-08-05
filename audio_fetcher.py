@@ -79,19 +79,15 @@ class RobloxAudioFetcher:
             "Cookie": f'.ROBLOSECURITY={cookie}'
         }
 
-        # First try: homepage + check for X-CSRF-TOKEN
         try:
-            async with session.get("https://www.roblox.com/", headers=headers) as resp:
+            async with session.get("https://www.roblox.com/", headers=headers, allow_redirects=False) as resp:
                 if resp.status == 200:
                     token = resp.headers.get('X-CSRF-TOKEN')
                     if token:
                         return True, "Valid"
-                elif resp.status in (301, 302, 303, 307):
-                    pass
         except:
             pass
 
-        # Second try: mobile API (returns user info)
         try:
             async with session.get("https://www.roblox.com/mobileapi/userinfo", headers=headers) as resp:
                 if resp.status == 200:
@@ -101,46 +97,47 @@ class RobloxAudioFetcher:
         except:
             pass
 
-        # Third try: fetch home page and check for redirect or login content
-        try:
-            async with session.get("https://www.roblox.com/home", headers=headers, allow_redirects=False) as resp:
-                if resp.status == 200:
-                    # check for presence of login button or user avatar
-                    text = await resp.text()
-                    if "Log In" not in text and "Sign Up" not in text:
-                        return True, "Valid"
-                elif resp.status in (301, 302, 303, 307):
-                    pass
-        except:
-            pass
-
         return False, "Cookie invalid or expired – log out and back in, then copy a fresh cookie."
 
     async def _get_csrf_token(self, cookie: str):
         session = await self._get_session()
-        endpoints = [
-            "https://www.roblox.com/",
-            "https://assetdelivery.roblox.com/v1/asset/"
-        ]
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "Cookie": f'.ROBLOSECURITY={cookie}'
         }
-        for url in endpoints:
-            try:
-                async with session.get(url, headers=headers) as resp:
-                    token = resp.headers.get('X-CSRF-TOKEN')
-                    if token:
-                        return token
-            except:
-                continue
+
+        print("[DEBUG] Trying to get CSRF token from www.roblox.com...", flush=True)
+        try:
+            async with session.get("https://www.roblox.com/", headers=headers) as resp:
+                token = resp.headers.get('X-CSRF-TOKEN')
+                print(f"[DEBUG] GET www.roblox.com - status: {resp.status}, token: {token[:20] if token else 'None'}", flush=True)
+                if token:
+                    return token
+        except Exception as e:
+            print(f"[DEBUG] GET www.roblox.com failed: {e}", flush=True)
+
+        print("[DEBUG] Trying to get CSRF token from assetdelivery...", flush=True)
+        try:
+            async with session.get("https://assetdelivery.roblox.com/v1/asset/", headers=headers) as resp:
+                token = resp.headers.get('X-CSRF-TOKEN')
+                print(f"[DEBUG] GET assetdelivery - status: {resp.status}, token: {token[:20] if token else 'None'}", flush=True)
+                if token:
+                    return token
+        except Exception as e:
+            print(f"[DEBUG] GET assetdelivery failed: {e}", flush=True)
+
+        print("[DEBUG] Trying POST to get CSRF token...", flush=True)
         try:
             async with session.post("https://assetdelivery.roblox.com/v1/assetId/upload?assetId=0", headers=headers) as resp:
                 token = resp.headers.get('X-CSRF-TOKEN')
+                print(f"[DEBUG] POST upload - status: {resp.status}, token: {token[:20] if token else 'None'}", flush=True)
                 if token:
                     return token
-        except:
-            pass
+                text = await resp.text()
+                print(f"[DEBUG] POST response body (first 200 chars): {text[:200]}", flush=True)
+        except Exception as e:
+            print(f"[DEBUG] POST upload failed: {e}", flush=True)
+
         return None
 
     async def upload_audio(self, file_bytes: bytes, filename: str, name: str = None, description: str = None, group_id: int = None, cookie: str = None):
@@ -184,6 +181,9 @@ class RobloxAudioFetcher:
         try:
             async with session.post(url, data=data, headers=headers) as resp:
                 result = await resp.text()
+                print(f"[DEBUG] Upload response status: {resp.status}", flush=True)
+                print(f"[DEBUG] Upload response body: {result[:500]}", flush=True)
+
                 if resp.status == 200:
                     try:
                         result_json = json.loads(result)
