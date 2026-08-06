@@ -155,7 +155,7 @@ async def help_slash(interaction: discord.Interaction):
     )
     embed.add_field(
         name="/upload (with attachment)",
-        value="Upload an MP3 or OGG audio file to Roblox (group 11425892). You must set a cookie first.",
+        value="Upload any audio file (converted to OGG) to Roblox (group 11425892). You must set a cookie first.",
         inline=False
     )
     embed.add_field(
@@ -164,7 +164,7 @@ async def help_slash(interaction: discord.Interaction):
             "`/audioinfo 1845655576`\n"
             "`/track add 123456`\n"
             "`/cookieset _|WARNING...`\n"
-            "`/upload` (with an MP3 or OGG file)"
+            "`/upload` (with attachment)"
         ),
         inline=False
     )
@@ -271,8 +271,8 @@ async def track(interaction: discord.Interaction, action: str, asset: str = None
     else:
         await interaction.followup.send("Invalid action. Use add, remove, or list.")
 
-@bot.tree.command(name="upload", description="Upload an MP3 or OGG audio file to Roblox (group 11425892)")
-@app_commands.describe(file="The audio file to upload (.mp3 or .ogg)")
+@bot.tree.command(name="upload", description="Upload an audio file to Roblox (converted to OGG, group 11425892)")
+@app_commands.describe(file="The audio file to upload (any format)")
 async def upload(interaction: discord.Interaction, file: discord.Attachment):
     await interaction.response.defer()
 
@@ -288,26 +288,20 @@ async def upload(interaction: discord.Interaction, file: discord.Attachment):
         await interaction.followup.send(f"Upload cookie invalid: {msg}\nUse `/cookieset` to update your cookie.")
         return
 
-    # Only allow MP3 and OGG
-    if not file.filename.lower().endswith(('.mp3', '.ogg')):
-        await interaction.followup.send("Unsupported file format. Please upload MP3 or OGG only.")
-        return
-
     try:
         file_bytes = await file.read()
         if len(file_bytes) > 10 * 1024 * 1024:
             await interaction.followup.send("File too large. Maximum size is 10 MB.")
             return
 
-        # Detect format from extension
-        ext = file.filename.split('.')[-1].lower()
-        if ext == 'mp3':
-            audio = AudioSegment.from_file(io.BytesIO(file_bytes), format="mp3")
-        elif ext == 'ogg':
-            audio = AudioSegment.from_file(io.BytesIO(file_bytes), format="ogg")
-        else:
-            # Should not happen due to earlier check
-            await interaction.followup.send("Unsupported file format.")
+        # Load audio (auto-detect format)
+        try:
+            audio = AudioSegment.from_file(io.BytesIO(file_bytes))
+        except CouldntDecodeError:
+            await interaction.followup.send("Unsupported audio format. Please provide a valid audio file.")
+            return
+        except Exception as e:
+            await interaction.followup.send(f"Could not process audio: {str(e)[:100]}")
             return
 
         MAX_DURATION_SEC = 419
