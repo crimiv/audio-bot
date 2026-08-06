@@ -126,8 +126,18 @@ async def help_slash(interaction: discord.Interaction):
         inline=False
     )
     embed.add_field(
-        name="/track <add|remove|list> [asset]",
-        value="Track assets for moderation changes. You'll be DM'd if an asset gets moderated.",
+        name="/trackadd <asset>",
+        value="Start tracking an asset for moderation changes.",
+        inline=False
+    )
+    embed.add_field(
+        name="/trackremove <asset>",
+        value="Stop tracking an asset.",
+        inline=False
+    )
+    embed.add_field(
+        name="/tracklist",
+        value="List all assets you are tracking.",
         inline=False
     )
     embed.add_field(
@@ -159,7 +169,7 @@ async def help_slash(interaction: discord.Interaction):
         name="Examples",
         value=(
             "`/audioinfo 1845655576`\n"
-            "`/track add 123456`\n"
+            "`/trackadd 123456`\n"
             "`/cookieset _|WARNING...`\n"
             "`/upload` (with attachment)"
         ),
@@ -225,48 +235,45 @@ async def checkcookie(interaction: discord.Interaction):
     else:
         await interaction.followup.send(f"Your cookie is invalid: {msg}")
 
-@bot.tree.command(name="track", description="Track a Roblox audio asset for moderation changes")
-@app_commands.describe(action="add, remove, or list", asset="Asset ID or URL (for add/remove)")
-async def track(interaction: discord.Interaction, action: str, asset: str = None):
+@bot.tree.command(name="trackadd", description="Start tracking a Roblox audio asset for moderation changes")
+@app_commands.describe(asset="Asset ID or URL to track")
+async def trackadd(interaction: discord.Interaction, asset: str):
     await interaction.response.defer()
     user_id = str(interaction.user.id)
 
-    if action.lower() == "add":
-        if not asset:
-            await interaction.followup.send("Please provide an asset ID or URL to track.")
-            return
-        try:
-            asset_id = extract_asset_id(asset)
-        except ValueError as e:
-            await interaction.followup.send(f"Error: {str(e)}")
-            return
+    try:
+        asset_id = extract_asset_id(asset)
+    except ValueError as e:
+        await interaction.followup.send(f"Error: {str(e)}")
+        return
 
-        await add_tracked_asset(str(asset_id), user_id)
-        await interaction.followup.send(f"Now tracking asset {asset_id}. You will be notified if it gets moderated.")
+    await add_tracked_asset(str(asset_id), user_id)
+    await interaction.followup.send(f"Now tracking asset {asset_id}. You will be notified if it gets moderated.")
 
-    elif action.lower() == "remove":
-        if not asset:
-            await interaction.followup.send("Please provide an asset ID or URL to remove from tracking.")
-            return
-        try:
-            asset_id = extract_asset_id(asset)
-        except ValueError as e:
-            await interaction.followup.send(f"Error: {str(e)}")
-            return
+@bot.tree.command(name="trackremove", description="Stop tracking a Roblox audio asset")
+@app_commands.describe(asset="Asset ID or URL to remove from tracking")
+async def trackremove(interaction: discord.Interaction, asset: str):
+    await interaction.response.defer()
+    user_id = str(interaction.user.id)
 
-        await remove_tracked_asset(str(asset_id))
-        await interaction.followup.send(f"Removed asset {asset_id} from tracking.")
+    try:
+        asset_id = extract_asset_id(asset)
+    except ValueError as e:
+        await interaction.followup.send(f"Error: {str(e)}")
+        return
 
-    elif action.lower() == "list":
-        assets = await get_all_tracked_assets()
-        if not assets:
-            await interaction.followup.send("You are not tracking any assets.")
-            return
-        asset_list = "\n".join([f"- {a['asset_id']}" for a in assets])
-        await interaction.followup.send(f"Tracked assets:\n{asset_list}")
+    await remove_tracked_asset(str(asset_id))
+    await interaction.followup.send(f"Removed asset {asset_id} from tracking.")
 
-    else:
-        await interaction.followup.send("Invalid action. Use add, remove, or list.")
+@bot.tree.command(name="tracklist", description="List all assets you are tracking")
+async def tracklist(interaction: discord.Interaction):
+    await interaction.response.defer()
+    assets = await get_all_tracked_assets()
+    if not assets:
+        await interaction.followup.send("You are not tracking any assets.")
+        return
+    asset_list = "\n".join([f"- {a['asset_id']}" for a in assets])
+    await interaction.followup.send(f"Tracked assets:\n{asset_list}")
 
 @bot.tree.command(name="upload", description="Upload an audio file to Roblox (converted to OGG, group 11425892)")
 @app_commands.describe(file="The audio file to upload (any format)")

@@ -88,7 +88,6 @@ class RobloxAudioFetcher:
             "Cookie": f'.ROBLOSECURITY={cookie}'
         }
 
-        # POST request to the upload endpoint triggers a 403 and returns the token in headers
         try:
             async with session.post("https://assetdelivery.roblox.com/v1/assetId/upload?assetId=0", headers=headers) as resp:
                 token = resp.headers.get('X-CSRF-TOKEN')
@@ -111,7 +110,6 @@ class RobloxAudioFetcher:
 
         csrf_token = await self._get_csrf_token(cookie)
         if not csrf_token:
-            # Retry once with a different endpoint
             try:
                 async with session.get("https://www.roblox.com/", headers=headers) as resp:
                     csrf_token = resp.headers.get('X-CSRF-TOKEN')
