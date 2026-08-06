@@ -73,31 +73,13 @@ class RobloxAudioFetcher:
             return {"moderated": False, "status": "Error"}
 
     async def _validate_cookie(self, cookie: str):
-        # First check: mobile API – returns user info if valid
-        try:
-            session = await self._get_session()
-            headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                "Cookie": f'.ROBLOSECURITY={cookie}'
-            }
-            async with session.get("https://www.roblox.com/mobileapi/userinfo", headers=headers) as resp:
-                if resp.status == 200:
-                    data = await resp.json()
-                    if data.get("UserName"):
-                        return True, "Valid"
-        except:
-            pass
-
-        # Second check: fetch a known public asset
         try:
             details = await self.fetch_asset_details(1845655576, cookie)
             if details:
                 return True, "Valid"
         except:
             pass
-
-        # If both fail, the cookie is invalid
-        return False, "Cookie invalid or expired – please ensure you copied the entire cookie value correctly (it starts with '_|WARNING')."
+        return False, "Cookie invalid or expired – please ensure you copied the entire cookie value correctly."
 
     async def _get_csrf_token(self, cookie: str):
         session = await self._get_session()
@@ -106,37 +88,42 @@ class RobloxAudioFetcher:
             "Cookie": f'.ROBLOSECURITY={cookie}'
         }
 
-        print("[DEBUG] Trying to get CSRF token from www.roblox.com...", flush=True)
+        # Try GET first
         try:
             async with session.get("https://www.roblox.com/", headers=headers) as resp:
                 token = resp.headers.get('X-CSRF-TOKEN')
-                print(f"[DEBUG] GET www.roblox.com - status: {resp.status}, token: {token[:20] if token else 'None'}", flush=True)
                 if token:
                     return token
-        except Exception as e:
-            print(f"[DEBUG] GET www.roblox.com failed: {e}", flush=True)
+        except:
+            pass
 
-        print("[DEBUG] Trying to get CSRF token from assetdelivery...", flush=True)
-        try:
-            async with session.get("https://assetdelivery.roblox.com/v1/asset/", headers=headers) as resp:
-                token = resp.headers.get('X-CSRF-TOKEN')
-                print(f"[DEBUG] GET assetdelivery - status: {resp.status}, token: {token[:20] if token else 'None'}", flush=True)
-                if token:
-                    return token
-        except Exception as e:
-            print(f"[DEBUG] GET assetdelivery failed: {e}", flush=True)
-
-        print("[DEBUG] Trying POST to get CSRF token...", flush=True)
+        # Try POST to get token (triggers 403 with token in headers)
         try:
             async with session.post("https://assetdelivery.roblox.com/v1/assetId/upload?assetId=0", headers=headers) as resp:
                 token = resp.headers.get('X-CSRF-TOKEN')
-                print(f"[DEBUG] POST upload - status: {resp.status}, token: {token[:20] if token else 'None'}", flush=True)
                 if token:
                     return token
-                text = await resp.text()
-                print(f"[DEBUG] POST response body (first 200 chars): {text[:200]}", flush=True)
-        except Exception as e:
-            print(f"[DEBUG] POST upload failed: {e}", flush=True)
+                # Also try reading from response body if present
+                try:
+                    text = await resp.text()
+                    if 'X-CSRF-TOKEN' in text:
+                        import re
+                        match = re.search(r'X-CSRF-TOKEN["\']?\s*[:=]\s*["\']?([a-zA-Z0-9+/=]+)', text)
+                        if match:
+                            return match.group(1)
+                except:
+                    pass
+        except:
+            pass
+
+        # Try a different endpoint
+        try:
+            async with session.post("https://assetdelivery.roblox.com/v1/assetId/upload", headers=headers) as resp:
+                token = resp.headers.get('X-CSRF-TOKEN')
+                if token:
+                    return token
+        except:
+            pass
 
         return None
 
@@ -181,9 +168,6 @@ class RobloxAudioFetcher:
         try:
             async with session.post(url, data=data, headers=headers) as resp:
                 result = await resp.text()
-                print(f"[DEBUG] Upload response status: {resp.status}", flush=True)
-                print(f"[DEBUG] Upload response body: {result[:500]}", flush=True)
-
                 if resp.status == 200:
                     try:
                         result_json = json.loads(result)
