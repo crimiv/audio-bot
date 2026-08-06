@@ -73,14 +73,31 @@ class RobloxAudioFetcher:
             return {"moderated": False, "status": "Error"}
 
     async def _validate_cookie(self, cookie: str):
-        # Try to fetch a known public asset – if it works, the cookie is valid.
+        # First check: mobile API – returns user info if valid
         try:
-            details = await self.fetch_asset_details(1832985263, cookie)
+            session = await self._get_session()
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Cookie": f'.ROBLOSECURITY={cookie}'
+            }
+            async with session.get("https://www.roblox.com/mobileapi/userinfo", headers=headers) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    if data.get("UserName"):
+                        return True, "Valid"
+        except:
+            pass
+
+        # Second check: fetch a known public asset
+        try:
+            details = await self.fetch_asset_details(1845655576, cookie)
             if details:
                 return True, "Valid"
         except:
             pass
-        return False, "Cookie invalid or expired – log out and back in, then copy a fresh cookie."
+
+        # If both fail, the cookie is invalid
+        return False, "Cookie invalid or expired – please ensure you copied the entire cookie value correctly (it starts with '_|WARNING')."
 
     async def _get_csrf_token(self, cookie: str):
         session = await self._get_session()
