@@ -31,7 +31,6 @@ intents = discord.Intents.default()
 bot = commands.Bot(command_prefix=None, intents=intents)
 fetcher = RobloxAudioFetcher()
 
-# Initialize database
 init_db()
 
 def extract_asset_id(input_str: str) -> int:
@@ -156,7 +155,7 @@ async def help_slash(interaction: discord.Interaction):
     )
     embed.add_field(
         name="/upload (with attachment)",
-        value="Upload an audio file to Roblox (group 11425892). You must set a cookie first.",
+        value="Upload an MP3 or OGG audio file to Roblox (group 11425892). You must set a cookie first.",
         inline=False
     )
     embed.add_field(
@@ -165,7 +164,7 @@ async def help_slash(interaction: discord.Interaction):
             "`/audioinfo 1845655576`\n"
             "`/track add 123456`\n"
             "`/cookieset _|WARNING...`\n"
-            "`/upload` (with attachment)"
+            "`/upload` (with an MP3 or OGG file)"
         ),
         inline=False
     )
@@ -272,8 +271,8 @@ async def track(interaction: discord.Interaction, action: str, asset: str = None
     else:
         await interaction.followup.send("Invalid action. Use add, remove, or list.")
 
-@bot.tree.command(name="upload", description="Upload an audio file to Roblox (uploads to group 11425892)")
-@app_commands.describe(file="The audio file to upload")
+@bot.tree.command(name="upload", description="Upload an MP3 or OGG audio file to Roblox (group 11425892)")
+@app_commands.describe(file="The audio file to upload (.mp3 or .ogg)")
 async def upload(interaction: discord.Interaction, file: discord.Attachment):
     await interaction.response.defer()
 
@@ -289,8 +288,9 @@ async def upload(interaction: discord.Interaction, file: discord.Attachment):
         await interaction.followup.send(f"Upload cookie invalid: {msg}\nUse `/cookieset` to update your cookie.")
         return
 
-    if not file.filename.lower().endswith(('.mp3', '.wav', '.ogg', '.flac', '.m4a')):
-        await interaction.followup.send("Unsupported file format. Please upload MP3, WAV, OGG, FLAC, or M4A.")
+    # Only allow MP3 and OGG
+    if not file.filename.lower().endswith(('.mp3', '.ogg')):
+        await interaction.followup.send("Unsupported file format. Please upload MP3 or OGG only.")
         return
 
     try:
@@ -299,7 +299,16 @@ async def upload(interaction: discord.Interaction, file: discord.Attachment):
             await interaction.followup.send("File too large. Maximum size is 10 MB.")
             return
 
-        audio = AudioSegment.from_file(io.BytesIO(file_bytes), format=file.filename.split('.')[-1])
+        # Detect format from extension
+        ext = file.filename.split('.')[-1].lower()
+        if ext == 'mp3':
+            audio = AudioSegment.from_file(io.BytesIO(file_bytes), format="mp3")
+        elif ext == 'ogg':
+            audio = AudioSegment.from_file(io.BytesIO(file_bytes), format="ogg")
+        else:
+            # Should not happen due to earlier check
+            await interaction.followup.send("Unsupported file format.")
+            return
 
         MAX_DURATION_SEC = 419
         if len(audio) > MAX_DURATION_SEC * 1000:
