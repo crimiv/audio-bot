@@ -8,7 +8,7 @@ import gc
 from pydub import AudioSegment
 from pydub.exceptions import CouldntDecodeError
 from pydub.utils import mediainfo
-from config import MAIN_COOKIE
+from config import MAIN_COOKIE, get_cookie_list
 
 MAX_AUDIO_SIZE = 8 * 1024 * 1024
 
@@ -52,6 +52,76 @@ class RobloxAudioFetcher:
                 return None
         except:
             return None
+
+    async def fetch_asset_details_with_fallback(self, asset_id: int):
+        for cookie in get_cookie_list():
+            details = await self.fetch_asset_details(asset_id, cookie)
+            if details:
+                return details
+        return None
+
+    async def fetch_audio(self, asset_id: int, cookie: str = None):
+        session = await self._get_session()
+        url = f"https://assetdelivery.roblox.com/v1/assetId/{asset_id}"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        }
+        if cookie:
+            headers['Cookie'] = f'.ROBLOSECURITY={cookie}'
+
+        timeout = aiohttp.ClientTimeout(total=30)
+
+        try:
+            async with session.get(url, headers=headers, timeout=timeout) as resp:
+                content_type = resp.headers.get('Content-Type', '')
+                initial_data = await resp.read()
+
+                if 'application/json' in content_type:
+                    try:
+                        data = json.loads(initial_data)
+                        if 'errors' in data and data['errors']:
+                            return None
+                        if 'location' in data:
+                            location_url = data['location']
+                            with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp:
+                                tmp_path = tmp.name
+                                async with session.get(location_url, headers=headers, timeout=timeout) as cdn_resp:
+                                    if cdn_resp.status != 200:
+                                        return None
+                                    bytes_downloaded = 0
+                                    while True:
+                                        chunk = await cdn_resp.content.read(8192)
+                                        if not chunk:
+                                            break
+                                        bytes_downloaded += len(chunk)
+                                        if bytes_downloaded > MAX_AUDIO_SIZE:
+                                            return None
+                                        tmp.write(chunk)
+                            with open(tmp_path, 'rb') as f:
+                                audio_data = f.read()
+                            os.unlink(tmp_path)
+                            return audio_data
+                        else:
+                            return None
+                    except json.JSONDecodeError:
+                        pass
+
+                if len(initial_data) < 1000:
+                    return None
+
+                return initial_data
+
+        except asyncio.TimeoutError:
+            return None
+        except Exception:
+            return None
+
+    async def fetch_audio_with_fallback(self, asset_id: int):
+        for cookie in get_cookie_list():
+            audio_data = await self.fetch_audio(asset_id, cookie)
+            if audio_data and len(audio_data) > 1000:
+                return audio_data
+        return None
 
     async def fetch_asset_moderation_status(self, asset_id: int, cookie: str = None):
         session = await self._get_session()
@@ -110,13 +180,7 @@ class RobloxAudioFetcher:
 
         csrf_token = await self._get_csrf_token(cookie)
         if not csrf_token:
-            try:
-                async with session.get("https://www.roblox.com/", headers=headers) as resp:
-                    csrf_token = resp.headers.get('X-CSRF-TOKEN')
-            except:
-                pass
-            if not csrf_token:
-                raise Exception("Could not retrieve CSRF token – cookie may be invalid or expired. Please refresh your cookie.")
+            raise Exception("Could not retrieve CSRF token – cookie may be invalid or expired. Please refresh your cookie.")
 
         if not name:
             name = os.path.splitext(filename)[0]
@@ -183,70 +247,6 @@ class RobloxAudioFetcher:
                         raise Exception(f"Upload failed: {error_msg}")
                     except:
                         raise Exception(f"Upload failed with status {resp.status}")
-        except Exception as e:
-            raise
-
-    async def fetch_audio(self, asset_id: int, cookie: str = None):
-        session = await self._get_session()
-        url = f"https://assetdelivery.roblox.com/v1/assetId/{asset_id}"
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        }
-        if cookie:
-            headers['Cookie'] = f'.ROBLOSECURITY={cookie}'
-
-        timeout = aiohttp.ClientTimeout(total=30)
-
-        try:
-            async with session.get(url, headers=headers, timeout=timeout) as resp:
-                content_type = resp.headers.get('Content-Type', '')
-                initial_data = await resp.read()
-
-                if 'application/json' in content_type:
-                    try:
-                        data = json.loads(initial_data)
-                        if 'errors' in data and data['errors']:
-                            error_msg = data['errors'][0].get('message', 'Unknown error')
-                            raise Exception(f"Roblox API error: {error_msg}")
-                        if 'location' in data:
-                            location_url = data['location']
-                            with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp:
-                                tmp_path = tmp.name
-                                async with session.get(location_url, headers=headers, timeout=timeout) as cdn_resp:
-                                    if cdn_resp.status != 200:
-                                        raise Exception(f"CDN returned HTTP {cdn_resp.status}")
-                                    bytes_downloaded = 0
-                                    while True:
-                                        chunk = await cdn_resp.content.read(8192)
-                                        if not chunk:
-                                            break
-                                        bytes_downloaded += len(chunk)
-                                        if bytes_downloaded > MAX_AUDIO_SIZE:
-                                            raise Exception(f"Audio file exceeds maximum size of {MAX_AUDIO_SIZE//1024//1024} MB")
-                                        tmp.write(chunk)
-                            with open(tmp_path, 'rb') as f:
-                                audio_data = f.read()
-                            os.unlink(tmp_path)
-                            return audio_data
-                        else:
-                            raise Exception("Unexpected response from Roblox")
-                    except json.JSONDecodeError:
-                        pass
-
-                if len(initial_data) < 1000:
-                    try:
-                        text = initial_data.decode('utf-8')
-                        if '<html' in text.lower():
-                            raise Exception("Roblox returned an error page – invalid asset?")
-                        else:
-                            raise Exception("Downloaded file is too small – not a valid audio file.")
-                    except UnicodeDecodeError:
-                        raise Exception("Downloaded file is not valid audio.")
-
-                return initial_data
-
-        except asyncio.TimeoutError:
-            raise Exception("Request to Roblox timed out.")
         except Exception as e:
             raise
 
