@@ -1,32 +1,57 @@
-from supabase import create_client, Client
+import aiohttp
+import asyncio
 from config import SUPABASE_URL, SUPABASE_KEY
 
 if not SUPABASE_URL or not SUPABASE_KEY:
     raise SystemExit("SUPABASE_URL and SUPABASE_KEY are required.")
 
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+BASE_URL = f"{SUPABASE_URL}/rest/v1"
+HEADERS = {
+    "apikey": SUPABASE_KEY,
+    "Authorization": f"Bearer {SUPABASE_KEY}",
+    "Content-Type": "application/json",
+    "Prefer": "return=representation"
+}
 
-def get_user_cookie(user_id: str):
-    resp = supabase.table("user_cookies").select("cookie").eq("user_id", user_id).execute()
-    if resp.data and len(resp.data) > 0:
-        return resp.data[0]["cookie"]
+async def _request(method: str, table: str, data: dict = None, params: dict = None):
+    async with aiohttp.ClientSession() as session:
+        url = f"{BASE_URL}/{table}"
+        async with session.request(method, url, headers=HEADERS, json=data, params=params) as resp:
+            if resp.status >= 400:
+                text = await resp.text()
+                raise Exception(f"Supabase error {resp.status}: {text}")
+            if resp.status == 204:
+                return None
+            return await resp.json()
+
+async def get_user_cookie(user_id: str):
+    params = {"user_id": f"eq.{user_id}"}
+    result = await _request("GET", "user_cookies", params=params)
+    if result and len(result) > 0:
+        return result[0]["cookie"]
     return None
 
-def set_user_cookie(user_id: str, cookie: str):
-    supabase.table("user_cookies").upsert({"user_id": user_id, "cookie": cookie}).execute()
+async def set_user_cookie(user_id: str, cookie: str):
+    data = {"user_id": user_id, "cookie": cookie}
+    await _request("POST", "user_cookies", data=data)
 
-def delete_user_cookie(user_id: str):
-    supabase.table("user_cookies").delete().eq("user_id", user_id).execute()
+async def delete_user_cookie(user_id: str):
+    params = {"user_id": f"eq.{user_id}"}
+    await _request("DELETE", "user_cookies", params=params)
 
-def get_all_tracked_assets():
-    resp = supabase.table("tracking").select("*").execute()
-    return resp.data if resp.data else []
+async def get_all_tracked_assets():
+    result = await _request("GET", "tracking")
+    return result if result else []
 
-def add_tracked_asset(asset_id: str, user_id: str):
-    supabase.table("tracking").upsert({"asset_id": asset_id, "user_id": user_id, "moderated": 0}).execute()
+async def add_tracked_asset(asset_id: str, user_id: str):
+    data = {"asset_id": asset_id, "user_id": user_id, "moderated": 0}
+    await _request("POST", "tracking", data=data)
 
-def remove_tracked_asset(asset_id: str):
-    supabase.table("tracking").delete().eq("asset_id", asset_id).execute()
+async def remove_tracked_asset(asset_id: str):
+    params = {"asset_id": f"eq.{asset_id}"}
+    await _request("DELETE", "tracking", params=params)
 
-def update_tracked_asset_moderated(asset_id: str, moderated: int):
-    supabase.table("tracking").update({"moderated": moderated}).eq("asset_id", asset_id).execute()
+async def update_tracked_asset_moderated(asset_id: str, moderated: int):
+    data = {"moderated": moderated}
+    params = {"asset_id": f"eq.{asset_id}"}
+    await _request("PATCH", "tracking", data=data, params=params)
