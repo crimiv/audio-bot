@@ -287,8 +287,10 @@ async def upload(interaction: discord.Interaction, file: discord.Attachment):
 
     try:
         file_bytes = await file.read()
-        if len(file_bytes) > 10 * 1024 * 1024:
-            await interaction.followup.send("File too large. Maximum size is 10 MB.")
+        file_size_mb = len(file_bytes) / (1024 * 1024)
+
+        if file_size_mb > 8:
+            await interaction.followup.send(f"File too large ({file_size_mb:.1f} MB). Maximum size is 8 MB.")
             return
 
         try:
