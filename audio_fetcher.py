@@ -88,24 +88,9 @@ class RobloxAudioFetcher:
             "Cookie": f'.ROBLOSECURITY={cookie}'
         }
 
-        try:
-            async with session.get("https://www.roblox.com/", headers=headers) as resp:
-                token = resp.headers.get('X-CSRF-TOKEN')
-                if token:
-                    return token
-        except:
-            pass
-
+        # POST request to the upload endpoint triggers a 403 and returns the token in headers
         try:
             async with session.post("https://assetdelivery.roblox.com/v1/assetId/upload?assetId=0", headers=headers) as resp:
-                token = resp.headers.get('X-CSRF-TOKEN')
-                if token:
-                    return token
-        except:
-            pass
-
-        try:
-            async with session.post("https://assetdelivery.roblox.com/v1/assetId/upload", headers=headers) as resp:
                 token = resp.headers.get('X-CSRF-TOKEN')
                 if token:
                     return token
@@ -126,7 +111,14 @@ class RobloxAudioFetcher:
 
         csrf_token = await self._get_csrf_token(cookie)
         if not csrf_token:
-            raise Exception("Could not retrieve CSRF token – cookie may be invalid or expired.")
+            # Retry once with a different endpoint
+            try:
+                async with session.get("https://www.roblox.com/", headers=headers) as resp:
+                    csrf_token = resp.headers.get('X-CSRF-TOKEN')
+            except:
+                pass
+            if not csrf_token:
+                raise Exception("Could not retrieve CSRF token – cookie may be invalid or expired. Please refresh your cookie.")
 
         if not name:
             name = os.path.splitext(filename)[0]
