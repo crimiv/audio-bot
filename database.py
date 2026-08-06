@@ -1,84 +1,32 @@
-import sqlite3
-import os
-import json
+from supabase import create_client, Client
+from config import SUPABASE_URL, SUPABASE_KEY
 
-DB_PATH = os.path.join(os.path.dirname(__file__), "data", "bot.db")
+if not SUPABASE_URL or not SUPABASE_KEY:
+    raise SystemExit("SUPABASE_URL and SUPABASE_KEY are required.")
 
-def get_db():
-    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
-
-def init_db():
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS user_cookies (
-            user_id TEXT PRIMARY KEY,
-            cookie TEXT NOT NULL
-        )
-    ''')
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS tracking (
-            asset_id TEXT PRIMARY KEY,
-            user_id TEXT NOT NULL,
-            moderated INTEGER DEFAULT 0,
-            notified INTEGER DEFAULT 0
-        )
-    ''')
-    conn.commit()
-    conn.close()
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 def get_user_cookie(user_id: str):
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("SELECT cookie FROM user_cookies WHERE user_id = ?", (user_id,))
-    row = cursor.fetchone()
-    conn.close()
-    if row:
-        return row["cookie"]
+    resp = supabase.table("user_cookies").select("cookie").eq("user_id", user_id).execute()
+    if resp.data and len(resp.data) > 0:
+        return resp.data[0]["cookie"]
     return None
 
 def set_user_cookie(user_id: str, cookie: str):
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("INSERT OR REPLACE INTO user_cookies (user_id, cookie) VALUES (?, ?)", (user_id, cookie))
-    conn.commit()
-    conn.close()
+    supabase.table("user_cookies").upsert({"user_id": user_id, "cookie": cookie}).execute()
 
 def delete_user_cookie(user_id: str):
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM user_cookies WHERE user_id = ?", (user_id,))
-    conn.commit()
-    conn.close()
+    supabase.table("user_cookies").delete().eq("user_id", user_id).execute()
 
 def get_all_tracked_assets():
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("SELECT asset_id, user_id, moderated FROM tracking")
-    rows = cursor.fetchall()
-    conn.close()
-    return [{"asset_id": row["asset_id"], "user_id": row["user_id"], "moderated": row["moderated"]} for row in rows]
+    resp = supabase.table("tracking").select("*").execute()
+    return resp.data if resp.data else []
 
 def add_tracked_asset(asset_id: str, user_id: str):
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("INSERT OR REPLACE INTO tracking (asset_id, user_id, moderated) VALUES (?, ?, 0)", (asset_id, user_id))
-    conn.commit()
-    conn.close()
+    supabase.table("tracking").upsert({"asset_id": asset_id, "user_id": user_id, "moderated": 0}).execute()
 
 def remove_tracked_asset(asset_id: str):
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM tracking WHERE asset_id = ?", (asset_id,))
-    conn.commit()
-    conn.close()
+    supabase.table("tracking").delete().eq("asset_id", asset_id).execute()
 
 def update_tracked_asset_moderated(asset_id: str, moderated: int):
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("UPDATE tracking SET moderated = ? WHERE asset_id = ?", (moderated, asset_id))
-    conn.commit()
-    conn.close()
+    supabase.table("tracking").update({"moderated": moderated}).eq("asset_id", asset_id).execute()

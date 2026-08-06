@@ -3,3 +3,5 @@ aiohttp==3.9.1
 pydub==0.25.1
 Pillow==10.1.0
 python-dotenv==1.0.0
+supabase==2.7.0
+postgrest==0.16.0

@@ -88,7 +88,6 @@ class RobloxAudioFetcher:
             "Cookie": f'.ROBLOSECURITY={cookie}'
         }
 
-        # Try GET first
         try:
             async with session.get("https://www.roblox.com/", headers=headers) as resp:
                 token = resp.headers.get('X-CSRF-TOKEN')
@@ -97,26 +96,14 @@ class RobloxAudioFetcher:
         except:
             pass
 
-        # Try POST to get token (triggers 403 with token in headers)
         try:
             async with session.post("https://assetdelivery.roblox.com/v1/assetId/upload?assetId=0", headers=headers) as resp:
                 token = resp.headers.get('X-CSRF-TOKEN')
                 if token:
                     return token
-                # Also try reading from response body if present
-                try:
-                    text = await resp.text()
-                    if 'X-CSRF-TOKEN' in text:
-                        import re
-                        match = re.search(r'X-CSRF-TOKEN["\']?\s*[:=]\s*["\']?([a-zA-Z0-9+/=]+)', text)
-                        if match:
-                            return match.group(1)
-                except:
-                    pass
         except:
             pass
 
-        # Try a different endpoint
         try:
             async with session.post("https://assetdelivery.roblox.com/v1/assetId/upload", headers=headers) as resp:
                 token = resp.headers.get('X-CSRF-TOKEN')
@@ -139,7 +126,7 @@ class RobloxAudioFetcher:
 
         csrf_token = await self._get_csrf_token(cookie)
         if not csrf_token:
-            raise Exception("Could not retrieve CSRF token – cookie may be invalid or expired. Please refresh your cookie.")
+            raise Exception("Could not retrieve CSRF token – cookie may be invalid or expired.")
 
         if not name:
             name = os.path.splitext(filename)[0]
@@ -198,7 +185,7 @@ class RobloxAudioFetcher:
                                     match = re.search(r'assetId["\']?\s*[:=]\s*["\']?(\d+)', retry_result)
                                     if match:
                                         return int(match.group(1))
-                    raise Exception("Upload failed: CSRF token invalid. Please refresh your cookie.")
+                    raise Exception("Upload failed: CSRF token invalid.")
                 else:
                     try:
                         error_data = json.loads(result)

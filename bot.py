@@ -14,7 +14,6 @@ from config import DISCORD_TOKEN, MAIN_COOKIE
 from audio_fetcher import RobloxAudioFetcher
 from waveform import generate_waveform_image, waveform_to_bytes
 from database import (
-    init_db,
     get_user_cookie,
     set_user_cookie,
     delete_user_cookie,
@@ -30,8 +29,6 @@ if not DISCORD_TOKEN:
 intents = discord.Intents.default()
 bot = commands.Bot(command_prefix=None, intents=intents)
 fetcher = RobloxAudioFetcher()
-
-init_db()
 
 def extract_asset_id(input_str: str) -> int:
     if input_str.isdigit():
@@ -294,7 +291,6 @@ async def upload(interaction: discord.Interaction, file: discord.Attachment):
             await interaction.followup.send("File too large. Maximum size is 10 MB.")
             return
 
-        # Load audio (auto-detect format)
         try:
             audio = AudioSegment.from_file(io.BytesIO(file_bytes))
         except CouldntDecodeError:
